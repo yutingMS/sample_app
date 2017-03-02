@@ -44,28 +44,27 @@ import android.widget.Spinner;
 
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
+
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
-import com.mbientlab.metawear.module.Barometer;
-import com.mbientlab.metawear.module.MultiChannelTemperature;
-import com.mbientlab.metawear.module.SingleChannelTemperature;
+import com.mbientlab.metawear.module.BarometerBosch;
 import com.mbientlab.metawear.module.Temperature;
+import com.mbientlab.metawear.module.Temperature.SensorType;
 import com.mbientlab.metawear.module.Timer;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import static android.view.View.GONE;
+import static android.view.View.VISIBLE;
+
 /**
  * Created by etsai on 8/19/2015.
  */
 public class TemperatureFragment extends SingleDataSensorFragment {
     private static final int TEMP_SAMPLE_PERIOD= 33, SINGLE_EXT_THERM_INDEX= 1;
-    private static final String STREAM_KEY= "temp_stream";
 
     private byte gpioDataPin= 0, gpioPulldownPin= 1;
     private boolean activeHigh= false;
@@ -73,29 +72,9 @@ public class TemperatureFragment extends SingleDataSensorFragment {
     private long startTime= -1;
     private Temperature tempModule;
     private Timer timerModule;
-    private List<MultiChannelTemperature.Source> availableSources= null;
+    private Timer.ScheduledTask scheduledTask;
     private List<String> spinnerEntries= null;
     private int selectedSourceIndex= 0;
-    private boolean startBmp280= false;
-    private final RouteManager.MessageHandler tempMsgHandler= new RouteManager.MessageHandler() {
-        @Override
-        public void process(Message message) {
-            final Float celsius = message.getData(Float.class);
-
-            LineData data = chart.getData();
-
-            if (startTime == -1) {
-                data.addXValue("0");
-                startTime = System.currentTimeMillis();
-            } else {
-                data.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
-            }
-
-            data.addEntry(new Entry(celsius, sampleCount), 0);
-
-            sampleCount++;
-        }
-    };
 
     private Spinner sourceSelector;
 
@@ -111,50 +90,32 @@ public class TemperatureFragment extends SingleDataSensorFragment {
         sourceSelector.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View innerView, int position, long id) {
-                if (tempModule instanceof MultiChannelTemperature) {
-                    MultiChannelTemperature.Source selected= availableSources.get(position);
-                    if (selected instanceof MultiChannelTemperature.BMP280) {
-                        try {
-                            mwBoard.getModule(Barometer.class).start();
-                        } catch (UnsupportedModuleException ignored) {
-                            view.findViewById(R.id.sample_control).setEnabled(false);
+                if (tempModule.sensors()[position].type() == SensorType.BOSCH_ENV) {
+                    try {
+                        mwBoard.getModuleOrThrow(BarometerBosch.class).start();
+                    } catch (UnsupportedModuleException e) {
+                        view.findViewById(R.id.sample_control).setEnabled(false);
 
-                            final AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
-                            builder.setTitle(R.string.title_error);
-                            builder.setMessage(R.string.message_no_bosch_barometer);
-                            builder.setPositiveButton(android.R.string.ok, null);
-                            builder.show();
-                        }
-                    } else {
-                        try {
-                            mwBoard.getModule(Barometer.class).stop();
-                        } catch (UnsupportedModuleException ignored) {
-                        }
-
-                        view.findViewById(R.id.sample_control).setEnabled(true);
+                        final AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+                        builder.setTitle(R.string.title_error);
+                        builder.setMessage(R.string.message_no_bosch_barometer);
+                        builder.setPositiveButton(android.R.string.ok, null);
+                        builder.show();
                     }
-
-                    int[] extThermResIds = new int[]{R.id.ext_thermistor_data_pin_wrapper, R.id.ext_thermistor_pulldown_pin_wrapper,
-                            R.id.ext_thermistor_active_setting_title, R.id.ext_thermistor_active_setting
-                    };
-                    for (int resId : extThermResIds) {
-                        if (availableSources.get(position) instanceof MultiChannelTemperature.ExtThermistor) {
-                            view.findViewById(resId).setVisibility(View.VISIBLE);
-                        } else {
-                            view.findViewById(resId).setVisibility(View.GONE);
-                        }
+                } else {
+                    try {
+                        mwBoard.getModuleOrThrow(BarometerBosch.class).stop();
+                    } catch (UnsupportedModuleException e) {
+                        e.printStackTrace();
                     }
-                } else if (tempModule instanceof SingleChannelTemperature) {
-                    int[] extThermResIds = new int[]{R.id.ext_thermistor_data_pin_wrapper, R.id.ext_thermistor_pulldown_pin_wrapper
-                    };
+                    view.findViewById(R.id.sample_control).setEnabled(true);
+                }
 
-                    for (int resId : extThermResIds) {
-                        if (position == SINGLE_EXT_THERM_INDEX) {
-                            view.findViewById(resId).setVisibility(View.VISIBLE);
-                        } else {
-                            view.findViewById(resId).setVisibility(View.GONE);
-                        }
-                    }
+                int[] extThermResIds = new int[]{R.id.ext_thermistor_data_pin_wrapper, R.id.ext_thermistor_pulldown_pin_wrapper,
+                        R.id.ext_thermistor_active_setting_title, R.id.ext_thermistor_active_setting
+                };
+                for (int resId : extThermResIds) {
+                    view.findViewById(resId).setVisibility(tempModule.sensors()[position].type() == SensorType.EXT_THERMISTOR ? VISIBLE : GONE);
                 }
 
                 selectedSourceIndex = position;
@@ -240,19 +201,13 @@ public class TemperatureFragment extends SingleDataSensorFragment {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        timerModule= mwBoard.getModule(Timer.class);
-        tempModule= mwBoard.getModule(Temperature.class);
+        timerModule= mwBoard.getModuleOrThrow(Timer.class);
+        tempModule= mwBoard.getModuleOrThrow(Temperature.class);
 
         spinnerEntries = new ArrayList<>();
-        if (tempModule instanceof MultiChannelTemperature) {
-            availableSources = ((MultiChannelTemperature) tempModule).getSources();
-
-            for (byte i = 0; i < availableSources.size(); i++) {
-                spinnerEntries.add(availableSources.get(i).getName());
-            }
-        } else if (tempModule instanceof SingleChannelTemperature) {
-            spinnerEntries.add("NRF On-Die Sensor");
-            spinnerEntries.add("External Thermistor");
+        for (Temperature.Sensor it: tempModule.sensors()) {
+            spinnerEntries.add(it.type().toString()
+            );
         }
 
         final ArrayAdapter<String> spinnerAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item, spinnerEntries);
@@ -271,63 +226,39 @@ public class TemperatureFragment extends SingleDataSensorFragment {
 
     @Override
     protected void setup() {
-        if (tempModule instanceof MultiChannelTemperature) {
-            if (availableSources.get(selectedSourceIndex) instanceof MultiChannelTemperature.ExtThermistor) {
-                ((MultiChannelTemperature.ExtThermistor) availableSources.get(selectedSourceIndex))
-                        .configure(gpioDataPin, gpioPulldownPin, activeHigh);
-            }
-
-            ((MultiChannelTemperature) tempModule).routeData().fromSource(availableSources.get(selectedSourceIndex)).stream(STREAM_KEY).commit()
-                    .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            streamRouteManager = result;
-                            result.subscribe(STREAM_KEY, tempMsgHandler);
-                        }
-                    });
-            timerModule.scheduleTask(new Timer.Task() {
-                @Override
-                public void commands() {
-                    ((MultiChannelTemperature) tempModule).readTemperature(availableSources.get(selectedSourceIndex));
-                }
-            }, TEMP_SAMPLE_PERIOD, false).onComplete(new AsyncOperation.CompletionHandler<Timer.Controller>() {
-                @Override
-                public void success(Timer.Controller result) {
-                    result.start();
-                }
-            });
-        } else if (tempModule instanceof SingleChannelTemperature) {
-            if (selectedSourceIndex == SINGLE_EXT_THERM_INDEX) {
-                ((SingleChannelTemperature) tempModule).enableThermistorMode(gpioDataPin, gpioPulldownPin);
-            } else {
-                ((SingleChannelTemperature) tempModule).disableThermistorMode();
-            }
-
-            tempModule.routeData().fromSensor().stream(STREAM_KEY).commit()
-                    .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            streamRouteManager = result;
-                            result.subscribe(STREAM_KEY, tempMsgHandler);
-                        }
-                    });
-            timerModule.scheduleTask(new Timer.Task() {
-                @Override
-                public void commands() {
-                    tempModule.readTemperature();
-                }
-            }, TEMP_SAMPLE_PERIOD, false).onComplete(new AsyncOperation.CompletionHandler<Timer.Controller>() {
-                @Override
-                public void success(Timer.Controller result) {
-                    result.start();
-                }
-            });
+        Temperature.Sensor tempSensor = tempModule.sensors()[selectedSourceIndex];
+        if (tempSensor.type() == SensorType.EXT_THERMISTOR) {
+            ((Temperature.ExternalThermistor) tempModule.sensors()[selectedSourceIndex]).configure(gpioDataPin, gpioPulldownPin, activeHigh);
         }
+        tempSensor.addRouteAsync(source -> source.stream((data, env) -> {
+            final Float celsius = data.value(Float.class);
+
+            LineData chartData = chart.getData();
+
+            if (startTime == -1) {
+                chartData.addXValue("0");
+                startTime = System.currentTimeMillis();
+            } else {
+                chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
+            }
+            chartData.addEntry(new Entry(celsius, sampleCount), 0);
+
+            sampleCount++;
+        })).continueWithTask(task -> {
+            streamRoute = task.getResult();
+
+            return timerModule.scheduleAsync(TEMP_SAMPLE_PERIOD, false, tempSensor::read);
+        }).continueWithTask(task -> {
+            scheduledTask = task.getResult();
+            scheduledTask.start();
+
+            return null;
+        });
     }
 
     @Override
     protected void clean() {
-        timerModule.removeTimers();
+        scheduledTask.remove();
     }
 
     @Override

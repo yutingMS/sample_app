@@ -71,7 +71,6 @@
   <string name="error_firmware_path_type">Invalid firmware path type</string>
   <string name="error_bootloader">Cannot switch to bootloader mode</string>
   <string name="error_dfu_aborted">Firmware update aborted</string>
-  <string name="error_firmware_check">Active internet connection required to check for firmware updates</string>
 
   <string name="config_name_sampling_period">Sampling Period</string>
   <string name="config_desc_sampling_period">How often to sample data, in milliseconds</string>

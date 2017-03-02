@@ -39,13 +39,13 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 
-import com.mbientlab.metawear.AsyncOperation.CompletionHandler;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
 import com.mbientlab.metawear.module.Debug;
-import com.mbientlab.metawear.module.Macro;
 import com.mbientlab.metawear.module.Settings;
+
+import bolts.Task;
 
 /**
  * Created by etsai on 8/22/2015.
@@ -60,11 +60,7 @@ public class SettingsFragment extends ModuleFragmentBase {
     }
 
     private Settings settingsModule;
-    private Macro macroModule;
     private Debug debugModule;
-    private boolean isReady= false;
-    private CompletionHandler<Settings.AdvertisementConfig> readConfigHandler;
-
 
     private String deviceName;
     private int adInterval;
@@ -77,13 +73,22 @@ public class SettingsFragment extends ModuleFragmentBase {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        isReady= true;
+        debugModule= mwBoard.getModuleOrThrow(Debug.class);
+        settingsModule= mwBoard.getModuleOrThrow(Settings.class);
 
-        debugModule= mwBoard.getModule(Debug.class);
-        settingsModule= mwBoard.getModule(Settings.class);
-        macroModule= mwBoard.getModule(Macro.class);
+        settingsModule.readBleAdConfigAsync()
+                .continueWith(task -> {
+                    final int[] configEditText= new int[] {
+                            R.id.settings_ad_name_value, R.id.settings_ad_interval_value, R.id.settings_ad_timeout_value, R.id.settings_tx_power_value
+                    };
+                    Object[] values= new Object[] {task.getResult().deviceName, task.getResult().interval, task.getResult().timeout, task.getResult().txPower};
 
-        settingsModule.readAdConfig().onComplete(readConfigHandler);
+                    for (int i= 0; i < values.length; i++) {
+                        ((EditText) getView().findViewById(configEditText[i])).setText(values[i].toString());
+                    }
+
+                    return null;
+                }, Task.UI_THREAD_EXECUTOR);
     }
 
     @Override
@@ -109,82 +114,51 @@ public class SettingsFragment extends ModuleFragmentBase {
 
         Button enableBtn= (Button) settingsControl.findViewById(R.id.layout_two_button_left);
         enableBtn.setText(R.string.label_save);
-        enableBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View innerView) {
-                TextInputLayout[] inputLayouts = new TextInputLayout[CONFIG_WRAPPERS.length];
-                for (int i = 0; i < CONFIG_WRAPPERS.length; i++) {
-                    inputLayouts[i] = (TextInputLayout) view.findViewById(CONFIG_WRAPPERS[i]);
-                }
+        enableBtn.setOnClickListener(innerView -> {
+            TextInputLayout[] inputLayouts = new TextInputLayout[CONFIG_WRAPPERS.length];
+            for (int i = 0; i < CONFIG_WRAPPERS.length; i++) {
+                inputLayouts[i] = (TextInputLayout) view.findViewById(CONFIG_WRAPPERS[i]);
+            }
 
-                boolean valid = true;
-                deviceName = ((EditText) view.findViewById(R.id.settings_ad_name_value)).getText().toString();
+            boolean valid = true;
+            deviceName = ((EditText) view.findViewById(R.id.settings_ad_name_value)).getText().toString();
 
-                try {
-                    adInterval = Integer.valueOf(((EditText) view.findViewById(R.id.settings_ad_interval_value)).getText().toString());
-                    inputLayouts[1].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[1].setError(e.getLocalizedMessage());
-                }
+            try {
+                adInterval = Integer.valueOf(((EditText) view.findViewById(R.id.settings_ad_interval_value)).getText().toString());
+                inputLayouts[1].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[1].setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    timeout = Short.valueOf(((EditText) view.findViewById(R.id.settings_ad_timeout_value)).getText().toString());
-                    inputLayouts[2].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[2].setError(e.getLocalizedMessage());
-                }
+            try {
+                timeout = Short.valueOf(((EditText) view.findViewById(R.id.settings_ad_timeout_value)).getText().toString());
+                inputLayouts[2].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[2].setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    txPower = Byte.valueOf(((EditText) view.findViewById(R.id.settings_tx_power_value)).getText().toString());
-                    inputLayouts[3].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[3].setError(e.getLocalizedMessage());
-                }
+            try {
+                txPower = Byte.valueOf(((EditText) view.findViewById(R.id.settings_tx_power_value)).getText().toString());
+                inputLayouts[3].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[3].setError(e.getLocalizedMessage());
+            }
 
-                if (valid) {
-                    macroModule.record(new Macro.CodeBlock() {
-                        @Override
-                        public void commands() {
-                            settingsModule.configure()
-                                    .setDeviceName(deviceName)
-                                    .setAdInterval((short) (adInterval & 0xffff), (byte) (timeout & 0xff))
-                                    .setTxPower(txPower)
-                                    .commit();
-                        }
-                    });
-                }
+            if (valid) {
+                settingsModule.editBleAdConfig()
+                        .deviceName(deviceName)
+                        .timeout((byte) (timeout & 0xff))
+                        .interval((short) (adInterval & 0xffff))
+                        .txPower(txPower)
+                        .commit();
             }
         });
 
         Button disableBtn= (Button) settingsControl.findViewById(R.id.layout_two_button_right);
         disableBtn.setText(R.string.label_clear);
-        disableBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                macroModule.eraseMacros();
-                debugModule.resetAfterGarbageCollect();
-            }
-        });
-
-        readConfigHandler= new CompletionHandler<Settings.AdvertisementConfig>() {
-            @Override
-            public void success(Settings.AdvertisementConfig result) {
-                final int[] configEditText= new int[] {
-                        R.id.settings_ad_name_value, R.id.settings_ad_interval_value, R.id.settings_ad_timeout_value, R.id.settings_tx_power_value
-                };
-                Object[] values= new Object[] {result.deviceName(), result.interval(), result.timeout(), result.txPower()};
-
-                for (int i= 0; i < values.length; i++) {
-                    ((EditText) view.findViewById(configEditText[i])).setText(values[i].toString());
-                }
-            }
-        };
-
-        if (isReady) {
-            settingsModule.readAdConfig().onComplete(readConfigHandler);
-        }
+        disableBtn.setOnClickListener(view1 -> debugModule.resetAfterGc());
     }
 }

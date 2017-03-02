@@ -117,7 +117,7 @@ public class HapticFragment extends ModuleFragmentBase {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        hapticModule= mwBoard.getModule(Haptic.class);
+        hapticModule= mwBoard.getModuleOrThrow(Haptic.class);
     }
 
     @Override

@@ -46,7 +46,7 @@ import android.widget.Switch;
 
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.components.YAxis;
-import com.mbientlab.metawear.RouteManager;
+import com.mbientlab.metawear.Route;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -63,7 +63,7 @@ public abstract class SensorFragment extends ModuleFragmentBase {
     protected int sampleCount;
 
     protected float min, max;
-    protected RouteManager streamRouteManager= null;
+    protected Route streamRoute = null;
 
     private byte globalLayoutListenerCounter= 0;
     private final int layoutId;
@@ -89,7 +89,7 @@ public abstract class SensorFragment extends ModuleFragmentBase {
         chart.setVisibleXRangeMinimum(120);
         chart.setVisibleXRangeMaximum(120);
         if (sampleCount > 120) {
-            chart.moveViewToX(sampleCount - 120);
+            chart.moveViewToX(sampleCount - 120 - 1);
         } else {
             chart.moveViewToX(0);
         }
@@ -152,9 +152,9 @@ public abstract class SensorFragment extends ModuleFragmentBase {
                     chart.setVisibleXRangeMinimum(1);
                     chart.setVisibleXRangeMaximum(sampleCount);
                     clean();
-                    if (streamRouteManager != null) {
-                        streamRouteManager.remove();
-                        streamRouteManager = null;
+                    if (streamRoute != null) {
+                        streamRoute.remove();
+                        streamRoute = null;
                     }
                     chartHandler.removeCallbacks(updateChartTask);
                 }

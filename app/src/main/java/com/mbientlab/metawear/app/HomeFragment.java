@@ -32,7 +32,6 @@
 package com.mbientlab.metawear.app;
 
 import android.app.Dialog;
-import android.content.DialogInterface;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
@@ -44,22 +43,23 @@ import android.view.ViewGroup;
 import android.widget.RadioGroup;
 import android.widget.TextView;
 
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.MetaWearBoard.DeviceInformation;
-import com.mbientlab.metawear.RouteManager;
+import com.mbientlab.metawear.Route;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
 import com.mbientlab.metawear.module.Led;
+import com.mbientlab.metawear.module.Led.Color;
 import com.mbientlab.metawear.module.Switch;
 
 import java.util.Locale;
+
+import bolts.Task;
 
 /**
  * Created by etsai on 8/22/2015.
  */
 public class HomeFragment extends ModuleFragmentBase {
     private Led ledModule;
+    private int switchRouteId = -1;
 
     public static class MetaBootWarningFragment extends DialogFragment {
         @NonNull
@@ -87,95 +87,50 @@ public class HomeFragment extends ModuleFragmentBase {
     public void onViewCreated(final View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        view.findViewById(R.id.led_red_on).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                configureChannel(ledModule.configureColorChannel(Led.ColorChannel.RED));
-                ledModule.play(true);
-            }
+        view.findViewById(R.id.led_red_on).setOnClickListener(view1 -> {
+            configureChannel(ledModule.editPattern(Color.RED));
+            ledModule.play();
         });
-        view.findViewById(R.id.led_green_on).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                configureChannel(ledModule.configureColorChannel(Led.ColorChannel.GREEN));
-                ledModule.play(true);
-            }
+        view.findViewById(R.id.led_green_on).setOnClickListener(view12 -> {
+            configureChannel(ledModule.editPattern(Color.GREEN));
+            ledModule.play();
         });
-        view.findViewById(R.id.led_blue_on).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                configureChannel(ledModule.configureColorChannel(Led.ColorChannel.BLUE));
-                ledModule.play(true);
-            }
+        view.findViewById(R.id.led_blue_on).setOnClickListener(view13 -> {
+            configureChannel(ledModule.editPattern(Color.BLUE));
+            ledModule.play();
         });
-        view.findViewById(R.id.led_stop).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                ledModule.stop(true);
-            }
-        });
-        view.findViewById(R.id.board_rssi_text).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                mwBoard.readRssi().onComplete(new AsyncOperation.CompletionHandler<Integer>() {
-                    @Override
-                    public void success(Integer result) {
-                        ((TextView) view.findViewById(R.id.board_rssi_value)).setText(String.format(Locale.US, "%d dBm", result));
+        view.findViewById(R.id.led_stop).setOnClickListener(view14 -> ledModule.stop(true));
+        view.findViewById(R.id.board_rssi_text).setOnClickListener(v -> mwBoard.readRssiAsync()
+                .continueWith(task -> {
+                    ((TextView) view.findViewById(R.id.board_rssi_value)).setText(String.format(Locale.US, "%d dBm", task.getResult()));
+                    return null;
+                }, Task.UI_THREAD_EXECUTOR)
+        );
+        view.findViewById(R.id.board_battery_level_text).setOnClickListener(v -> mwBoard.readBatteryLevelAsync()
+                .continueWith(task -> {
+                    ((TextView) view.findViewById(R.id.board_battery_level_value)).setText(String.format(Locale.US, "%d", task.getResult()));
+                    return null;
+                }, Task.UI_THREAD_EXECUTOR)
+        );
+        view.findViewById(R.id.update_firmware).setOnClickListener(view15 -> mwBoard.checkForFirmwareUpdateAsync()
+                .continueWith(task -> {
+                    if (task.isFaulted()) {
+                        Snackbar.make(getActivity().findViewById(R.id.drawer_layout), task.getError().getLocalizedMessage(), Snackbar.LENGTH_LONG).show();
+                    } else {
+                        setupDfuDialog(new AlertDialog.Builder(getActivity()), task.getResult() ? R.string.message_dfu_accept : R.string.message_dfu_latest);
                     }
-                });
-            }
-        });
-        view.findViewById(R.id.board_battery_level_text).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                mwBoard.readBatteryLevel().onComplete(new AsyncOperation.CompletionHandler<Byte>() {
-                    @Override
-                    public void success(Byte result) {
-                        ((TextView) view.findViewById(R.id.board_battery_level_value)).setText(String.format(Locale.US, "%d", result));
-                    }
-
-                    @Override
-                    public void failure(Throwable error) {
-                        ((TextView) view.findViewById(R.id.board_battery_level_value)).setText(R.string.label_sodium);
-                    }
-                });
-            }
-        });
-        view.findViewById(R.id.update_firmware).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (mwBoard.inMetaBootMode()) {
-                    fragBus.initiateDfu(null);
-                } else {
-                    mwBoard.checkForFirmwareUpdate().onComplete(new AsyncOperation.CompletionHandler<Boolean>() {
-                        @Override
-                        public void success(Boolean result) {
-                            AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
-                            setupDfuDialog(builder, !result ? R.string.message_dfu_latest : R.string.message_dfu_accept);
-                            builder.show();
-                        }
-
-                        @Override
-                        public void failure(Throwable error) {
-                            Snackbar.make(getActivity().findViewById(R.id.drawer_layout), error.getLocalizedMessage(), Snackbar.LENGTH_LONG).show();
-                        }
-                    });
-                }
-            }
-        });
+                    return null;
+                }, Task.UI_THREAD_EXECUTOR)
+        );
     }
 
     private void setupDfuDialog(AlertDialog.Builder builder, int msgResId) {
         builder.setTitle(R.string.title_firmware_update)
-                .setPositiveButton(R.string.label_yes, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialogInterface, int i) {
-                        fragBus.initiateDfu(null);
-                    }
-                })
+                .setPositiveButton(R.string.label_yes, (dialogInterface, i) -> fragBus.initiateDfu(null))
                 .setNegativeButton(R.string.label_no, null)
                 .setCancelable(false)
-                .setMessage(msgResId);
+                .setMessage(msgResId)
+                .show();
     }
 
     @Override
@@ -193,15 +148,15 @@ public class HomeFragment extends ModuleFragmentBase {
         setupFragment(getView());
     }
 
-    private void configureChannel(Led.ColorChannelEditor editor) {
+    private void configureChannel(Led.PatternEditor editor) {
         final short PULSE_WIDTH= 1000;
-        editor.setHighIntensity((byte) 31).setLowIntensity((byte) 31)
-                .setHighTime((short) (PULSE_WIDTH >> 1)).setPulseDuration(PULSE_WIDTH)
-                .setRepeatCount((byte) -1).commit();
+        editor.highIntensity((byte) 31).lowIntensity((byte) 31)
+                .highTime((short) (PULSE_WIDTH >> 1)).pulseDuration(PULSE_WIDTH)
+                .repeatCount((byte) -1).commit();
     }
 
     private void setupFragment(final View v) {
-        final String METABOOT_WARNING_TAG= "metaboot_warning_tag", SWITCH_STREAM= "switch_stream";
+        final String METABOOT_WARNING_TAG= "metaboot_warning_tag";
 
         if (!mwBoard.isConnected()) {
             return;
@@ -218,54 +173,49 @@ public class HomeFragment extends ModuleFragmentBase {
             }
         }
 
-        mwBoard.readDeviceInformation().onComplete(new AsyncOperation.CompletionHandler<DeviceInformation>() {
-            @Override
-            public void success(DeviceInformation result) {
-                ((TextView) v.findViewById(R.id.manufacturer_value)).setText(result.manufacturer());
-                ((TextView) v.findViewById(R.id.model_number_value)).setText(result.modelNumber());
-                ((TextView) v.findViewById(R.id.serial_number_value)).setText(result.serialNumber());
-                ((TextView) v.findViewById(R.id.firmware_revision_value)).setText(result.firmwareRevision());
-                ((TextView) v.findViewById(R.id.hardware_revision_value)).setText(result.hardwareRevision());
+        mwBoard.readDeviceInformationAsync().continueWith(task -> {
+            if (task.getResult() != null) {
+                ((TextView) v.findViewById(R.id.manufacturer_value)).setText(task.getResult().manufacturer);
+                ((TextView) v.findViewById(R.id.model_number_value)).setText(task.getResult().modelNumber);
+                ((TextView) v.findViewById(R.id.serial_number_value)).setText(task.getResult().serialNumber);
+                ((TextView) v.findViewById(R.id.firmware_revision_value)).setText(task.getResult().firmwareRevision);
+                ((TextView) v.findViewById(R.id.hardware_revision_value)).setText(task.getResult().hardwareRevision);
                 ((TextView) v.findViewById(R.id.device_mac_address_value)).setText(mwBoard.getMacAddress());
             }
-        });
 
-        try {
-            Switch switchModule = mwBoard.getModule(Switch.class);
-            switchModule.routeData().fromSensor().stream(SWITCH_STREAM).commit()
-                    .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            result.subscribe(SWITCH_STREAM, new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message msg) {
-                                    RadioGroup radioGroup = (RadioGroup) v.findViewById(R.id.switch_radio_group);
+            return null;
+        }, Task.UI_THREAD_EXECUTOR);
 
-                                    if (msg.getData(Boolean.class)) {
-                                        radioGroup.check(R.id.switch_radio_pressed);
-                                        v.findViewById(R.id.switch_radio_pressed).setEnabled(true);
-                                        v.findViewById(R.id.switch_radio_released).setEnabled(false);
-                                    } else {
-                                        radioGroup.check(R.id.switch_radio_released);
-                                        v.findViewById(R.id.switch_radio_released).setEnabled(true);
-                                        v.findViewById(R.id.switch_radio_pressed).setEnabled(false);
-                                    }
-                                }
-                            });
+        Switch switchModule;
+        if ((switchModule= mwBoard.getModule(Switch.class)) != null) {
+            Route oldSwitchRoute;
+            if ((oldSwitchRoute = mwBoard.lookupRoute(switchRouteId)) != null) {
+                oldSwitchRoute.remove();
+            }
+
+            switchModule.state().addRouteAsync(source ->
+                    source.stream((data, env) -> getActivity().runOnUiThread(() -> {
+                        RadioGroup radioGroup = (RadioGroup) v.findViewById(R.id.switch_radio_group);
+
+                        if (data.value(Boolean.class)) {
+                            radioGroup.check(R.id.switch_radio_pressed);
+                            v.findViewById(R.id.switch_radio_pressed).setEnabled(true);
+                            v.findViewById(R.id.switch_radio_released).setEnabled(false);
+                        } else {
+                            radioGroup.check(R.id.switch_radio_released);
+                            v.findViewById(R.id.switch_radio_released).setEnabled(true);
+                            v.findViewById(R.id.switch_radio_pressed).setEnabled(false);
                         }
-                    });
-        } catch (UnsupportedModuleException ignored) {
+                    }))
+            ).continueWith(task -> switchRouteId = task.getResult().id());
         }
 
         int[] ledResIds= new int[] {R.id.led_stop, R.id.led_red_on, R.id.led_green_on, R.id.led_blue_on};
-
-        try {
-            ledModule = mwBoard.getModule(Led.class);
-
+        if ((ledModule = mwBoard.getModule(Led.class)) != null) {
             for(int id: ledResIds) {
                 v.findViewById(id).setEnabled(true);
             }
-        } catch (UnsupportedModuleException e) {
+        } else {
             for(int id: ledResIds) {
                 v.findViewById(id).setEnabled(false);
             }

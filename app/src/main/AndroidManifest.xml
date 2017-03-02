@@ -12,7 +12,7 @@
         android:theme="@style/AppTheme" >
 
         <service android:name=".DfuService" />
-        <service android:name="com.mbientlab.metawear.MetaWearBleService" />
+        <service android:name="com.mbientlab.metawear.android.BtleService" />
 
         <provider
             android:name="android.support.v4.content.FileProvider"

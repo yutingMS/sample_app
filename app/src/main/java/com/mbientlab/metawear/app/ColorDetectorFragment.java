@@ -44,13 +44,13 @@ import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
-import com.mbientlab.metawear.AsyncOperation.CompletionHandler;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
+
+import com.mbientlab.metawear.ForcedDataProducer;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
-import com.mbientlab.metawear.module.Tcs34725ColorDetector;
+import com.mbientlab.metawear.module.ColorTcs34725;
+import com.mbientlab.metawear.module.ColorTcs34725.*;
 import com.mbientlab.metawear.module.Timer;
 
 import java.io.FileOutputStream;
@@ -64,22 +64,22 @@ import java.util.Locale;
  */
 public class ColorDetectorFragment extends SensorFragment {
     private static final int COLOR_SAMPLE_PERIOD = 33;
-    private static String COLOR_STREAM_KEY= "color_stream";
 
     private int rangeIndex= 0;
     private long startTime= -1;
     private Timer timerModule;
-    private Tcs34725ColorDetector colorDetectorModule;
+    private Timer.ScheduledTask scheduledTask;
+    private ColorTcs34725 colorDetector;
     private final List<List<Entry>> colorAdc;
 
     public ColorDetectorFragment() {
         super(R.string.navigation_fragment_color_detector, R.layout.fragment_sensor_config_spinner, 0, 1024);
 
         colorAdc= new ArrayList<>();
-        colorAdc.add(new ArrayList<Entry>());
-        colorAdc.add(new ArrayList<Entry>());
-        colorAdc.add(new ArrayList<Entry>());
-        colorAdc.add(new ArrayList<Entry>());
+        colorAdc.add(new ArrayList<>());
+        colorAdc.add(new ArrayList<>());
+        colorAdc.add(new ArrayList<>());
+        colorAdc.add(new ArrayList<>());
     }
 
     @Override
@@ -109,7 +109,7 @@ public class ColorDetectorFragment extends SensorFragment {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        colorDetectorModule= mwBoard.getModule(Tcs34725ColorDetector.class);
+        colorDetector = mwBoard.getModuleOrThrow(ColorTcs34725.class);
         timerModule= mwBoard.getModule(Timer.class);
     }
 
@@ -120,49 +120,40 @@ public class ColorDetectorFragment extends SensorFragment {
 
     @Override
     protected void setup() {
-        colorDetectorModule.configure().setGain(Tcs34725ColorDetector.Gain.values()[rangeIndex]).commit();
-        colorDetectorModule.routeData().fromSensor(false).stream(COLOR_STREAM_KEY).commit()
-                .onComplete(new CompletionHandler<RouteManager>() {
-                    @Override
-                    public void success(RouteManager result) {
-                        streamRouteManager= result;
-                        result.subscribe(COLOR_STREAM_KEY, new RouteManager.MessageHandler() {
-                            @Override
-                            public void process(Message message) {
-                                LineData data = chart.getData();
-                                if (startTime == -1) {
-                                    data.addXValue("0");
-                                    startTime = System.currentTimeMillis();
-                                } else {
-                                    data.addXValue(String.format(Locale.US, "%.2f", (sampleCount * COLOR_SAMPLE_PERIOD) / 1000.f));
-                                }
+        ForcedDataProducer colorAdc = colorDetector.adc();
 
-                                Tcs34725ColorDetector.ColorAdc adc= message.getData(Tcs34725ColorDetector.ColorAdc.class);
-                                data.addEntry(new Entry(adc.clear(), sampleCount), 0);
-                                data.addEntry(new Entry(adc.red(), sampleCount), 1);
-                                data.addEntry(new Entry(adc.green(), sampleCount), 2);
-                                data.addEntry(new Entry(adc.blue(), sampleCount), 3);
-                                sampleCount++;
-                            }
-                        });
-                    }
-                });
-        timerModule.scheduleTask(new Timer.Task() {
-            @Override
-            public void commands() {
-                colorDetectorModule.readColorAdc(false);
+        colorDetector.configure()
+                .gain(Gain.values()[rangeIndex])
+                .commit();
+        colorAdc.addRouteAsync(source -> source.stream((data, env) -> {
+            LineData chartData = chart.getData();
+            if (startTime == -1) {
+                chartData.addXValue("0");
+                startTime = System.currentTimeMillis();
+            } else {
+                chartData.addXValue(String.format(Locale.US, "%.2f", (sampleCount * COLOR_SAMPLE_PERIOD) / 1000.f));
             }
-        }, COLOR_SAMPLE_PERIOD, false).onComplete(new CompletionHandler<Timer.Controller>() {
-            @Override
-            public void success(Timer.Controller result) {
-                result.start();
-            }
+
+            ColorAdc adc= data.value(ColorAdc.class);
+            chartData.addEntry(new Entry(adc.clear, sampleCount), 0);
+            chartData.addEntry(new Entry(adc.red, sampleCount), 1);
+            chartData.addEntry(new Entry(adc.green, sampleCount), 2);
+            chartData.addEntry(new Entry(adc.blue, sampleCount), 3);
+            sampleCount++;
+        })).continueWithTask(task -> {
+            streamRoute = task.getResult();
+
+            return timerModule.scheduleAsync(COLOR_SAMPLE_PERIOD, false, colorAdc::read);
+        }).continueWith(task -> {
+            scheduledTask = task.getResult();
+            scheduledTask.start();
+            return null;
         });
     }
 
     @Override
     protected void clean() {
-        timerModule.removeTimers();
+        scheduledTask.remove();
     }
 
     @Override

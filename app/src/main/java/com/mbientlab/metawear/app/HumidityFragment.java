@@ -33,12 +33,11 @@ package com.mbientlab.metawear.app;
 
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
-import com.mbientlab.metawear.AsyncOperation.CompletionHandler;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
+
+import com.mbientlab.metawear.ForcedDataProducer;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
-import com.mbientlab.metawear.module.Bme280Humidity;
+import com.mbientlab.metawear.module.HumidityBme280;
 import com.mbientlab.metawear.module.Timer;
 
 import java.util.Locale;
@@ -48,11 +47,11 @@ import java.util.Locale;
  */
 public class HumidityFragment extends SingleDataSensorFragment {
     private static final int HUMIDITY_SAMPLE_PERIOD = 33;
-    private static final String STREAM_KEY= "humidity_stream";
 
     private long startTime= -1;
-    private Bme280Humidity humidityModule;
+    private HumidityBme280 humidity;
     private Timer timerModule;
+    private Timer.ScheduledTask scheduledTask;
 
     public HumidityFragment() {
         super(R.string.navigation_fragment_humidity, "percentage", R.layout.fragment_sensor, HUMIDITY_SAMPLE_PERIOD / 1000.f, 0, 100);
@@ -60,54 +59,39 @@ public class HumidityFragment extends SingleDataSensorFragment {
 
     @Override
     protected void setup() {
-        humidityModule.routeData().fromSensor(false).stream(STREAM_KEY).commit()
-                .onComplete(new CompletionHandler<RouteManager>() {
-                    @Override
-                    public void success(RouteManager result) {
-                        streamRouteManager= result;
-                        result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
-                            @Override
-                            public void process(Message message) {
-                                final Float celsius = message.getData(Float.class);
+        ForcedDataProducer humiditValue = humidity.value();
+        humiditValue.addRouteAsync(source -> source.stream((data, env) -> {
+            LineData chartData = chart.getData();
 
-                                LineData data = chart.getData();
-
-                                if (startTime == -1) {
-                                    data.addXValue("0");
-                                    startTime = System.currentTimeMillis();
-                                } else {
-                                    data.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
-                                }
-
-                                data.addEntry(new Entry(celsius, sampleCount), 0);
-
-                                sampleCount++;
-                            }
-                        });
-                    }
-                });
-        timerModule.scheduleTask(new Timer.Task() {
-            @Override
-            public void commands() {
-                humidityModule.readHumidity(false);
+            if (startTime == -1) {
+                chartData.addXValue("0");
+                startTime = System.currentTimeMillis();
+            } else {
+                chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
             }
-        }, HUMIDITY_SAMPLE_PERIOD, false).onComplete(new CompletionHandler<Timer.Controller>() {
-            @Override
-            public void success(Timer.Controller result) {
-                result.start();
-            }
+            chartData.addEntry(new Entry(data.value(Float.class), sampleCount), 0);
+
+            sampleCount++;
+        })).continueWithTask(task -> {
+            streamRoute = task.getResult();
+            return timerModule.scheduleAsync(HUMIDITY_SAMPLE_PERIOD, false, humiditValue::read);
+        }).continueWith(task -> {
+            scheduledTask = task.getResult();
+            scheduledTask.start();
+
+            return null;
         });
     }
 
     @Override
     protected void clean() {
-        timerModule.removeTimers();
+        scheduledTask.remove();
     }
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        humidityModule= mwBoard.getModule(Bme280Humidity.class);
-        timerModule= mwBoard.getModule(Timer.class);
+        humidity = mwBoard.getModuleOrThrow(HumidityBme280.class);
+        timerModule= mwBoard.getModuleOrThrow(Timer.class);
     }
 
     @Override

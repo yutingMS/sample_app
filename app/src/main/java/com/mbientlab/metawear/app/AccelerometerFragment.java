@@ -39,31 +39,28 @@ import android.widget.Spinner;
 import android.widget.TextView;
 
 import com.github.mikephil.charting.components.YAxis;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.RouteManager;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
+import com.mbientlab.metawear.data.Acceleration;
 import com.mbientlab.metawear.module.Accelerometer;
-import com.mbientlab.metawear.module.Bma255Accelerometer;
-import com.mbientlab.metawear.module.Bmi160Accelerometer;
-import com.mbientlab.metawear.module.Mma8452qAccelerometer;
+import com.mbientlab.metawear.module.AccelerometerBosch;
+import com.mbientlab.metawear.module.AccelerometerMma8452q;
 
 /**
  * Created by etsai on 8/19/2015.
  */
 public class AccelerometerFragment extends ThreeAxisChartFragment {
-    private static final float[] MMA845Q_RANGES= {2.f, 4.f, 8.f}, BMI160_RANGES= {2.f, 4.f, 8.f, 16.f};
+    private static final float[] MMA845Q_RANGES= {2.f, 4.f, 8.f}, BOSCH_RANGES = {2.f, 4.f, 8.f, 16.f};
     private static final float INITIAL_RANGE= 2.f, ACC_FREQ= 50.f;
-    private static final String STREAM_KEY= "accel_stream";
 
     private Spinner accRangeSelection;
-    private Accelerometer accelModule= null;
+    private Accelerometer accelerometer = null;
     private int rangeIndex= 0;
 
     public AccelerometerFragment() {
         super("acceleration", R.layout.fragment_sensor_config_spinner,
-                R.string.navigation_fragment_accelerometer, STREAM_KEY, -INITIAL_RANGE, INITIAL_RANGE);
+                R.string.navigation_fragment_accelerometer, -INITIAL_RANGE, INITIAL_RANGE);
     }
 
     @Override
@@ -79,10 +76,10 @@ public class AccelerometerFragment extends ThreeAxisChartFragment {
                 rangeIndex = position;
 
                 final YAxis leftAxis = chart.getAxisLeft();
-                if (accelModule instanceof Bmi160Accelerometer || accelModule instanceof Bma255Accelerometer) {
-                    leftAxis.setAxisMaxValue(BMI160_RANGES[rangeIndex]);
-                    leftAxis.setAxisMinValue(-BMI160_RANGES[rangeIndex]);
-                } else if (accelModule instanceof Mma8452qAccelerometer) {
+                if (accelerometer instanceof AccelerometerBosch) {
+                    leftAxis.setAxisMaxValue(BOSCH_RANGES[rangeIndex]);
+                    leftAxis.setAxisMinValue(-BOSCH_RANGES[rangeIndex]);
+                } else if (accelerometer instanceof AccelerometerMma8452q) {
                     leftAxis.setAxisMaxValue(MMA845Q_RANGES[rangeIndex]);
                     leftAxis.setAxisMinValue(-MMA845Q_RANGES[rangeIndex]);
                 }
@@ -101,7 +98,7 @@ public class AccelerometerFragment extends ThreeAxisChartFragment {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException{
-        accelModule= mwBoard.getModule(Accelerometer.class);
+        accelerometer = mwBoard.getModuleOrThrow(Accelerometer.class);
 
         fillRangeAdapter();
     }
@@ -113,36 +110,41 @@ public class AccelerometerFragment extends ThreeAxisChartFragment {
 
     @Override
     protected void setup() {
-        samplePeriod= 1 / accelModule.setOutputDataRate(ACC_FREQ);
+        Accelerometer.ConfigEditor<?> editor = accelerometer.configure();
 
-        if (accelModule instanceof Bmi160Accelerometer || accelModule instanceof Bma255Accelerometer) {
-            accelModule.setAxisSamplingRange(BMI160_RANGES[rangeIndex]);
-        } else if (accelModule instanceof Mma8452qAccelerometer) {
-            accelModule.setAxisSamplingRange(MMA845Q_RANGES[rangeIndex]);
+        editor.odr(ACC_FREQ);
+        if (accelerometer instanceof AccelerometerBosch) {
+            editor.range(BOSCH_RANGES[rangeIndex]);
+        } else if (accelerometer instanceof AccelerometerMma8452q) {
+            editor.range(MMA845Q_RANGES[rangeIndex]);
         }
+        editor.commit();
 
-        AsyncOperation<RouteManager> routeManagerResult= accelModule.routeData().fromAxes().stream(STREAM_KEY).commit();
-        routeManagerResult.onComplete(dataStreamManager);
-        routeManagerResult.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-            @Override
-            public void success(RouteManager result) {
-                accelModule.enableAxisSampling();
-                accelModule.start();
-            }
+        samplePeriod= 1 / accelerometer.getOdr();
+
+        accelerometer.acceleration().addRouteAsync(source -> source.stream((data, env) -> {
+            final Acceleration value = data.value(Acceleration.class);
+            addChartData(value.x(), value.y(), value.z(), samplePeriod);
+        })).continueWith(task -> {
+            streamRoute = task.getResult();
+            accelerometer.acceleration().start();
+            accelerometer.start();
+
+            return null;
         });
     }
 
     @Override
     protected void clean() {
-        accelModule.stop();
-        accelModule.disableAxisSampling();
+        accelerometer.stop();
+        accelerometer.acceleration().stop();
     }
 
     private void fillRangeAdapter() {
         ArrayAdapter<CharSequence> spinnerAdapter= null;
-        if (accelModule instanceof Bmi160Accelerometer || accelModule instanceof Bma255Accelerometer) {
+        if (accelerometer instanceof AccelerometerBosch) {
             spinnerAdapter= ArrayAdapter.createFromResource(getContext(), R.array.values_bmi160_acc_range, android.R.layout.simple_spinner_item);
-        } else if (accelModule instanceof Mma8452qAccelerometer) {
+        } else if (accelerometer instanceof AccelerometerMma8452q) {
             spinnerAdapter= ArrayAdapter.createFromResource(getContext(), R.array.values_mma8452q_acc_range, android.R.layout.simple_spinner_item);
         }
 

@@ -32,18 +32,21 @@
 package com.mbientlab.metawear.app;
 
 import android.os.Bundle;
+import android.support.design.widget.Snackbar;
 import android.support.design.widget.TextInputLayout;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 
-import com.mbientlab.metawear.AsyncOperation.CompletionHandler;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
-import com.mbientlab.metawear.module.I2C;
+import com.mbientlab.metawear.module.SerialPassthrough;
+
+import bolts.Task;
 
 /**
  * Created by etsai on 3/1/2016.
@@ -79,7 +82,7 @@ public class I2CFragment extends ModuleFragmentBase {
         return bytes;
     }
 
-    private I2C i2cModule;
+    private SerialPassthrough serial;
 
     public I2CFragment() {
         super(R.string.navigation_fragment_i2c);
@@ -103,83 +106,81 @@ public class I2CFragment extends ModuleFragmentBase {
 
         Button readBtn= (Button) v.findViewById(R.id.layout_two_button_left);
         readBtn.setText(R.string.label_read);
-        readBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                boolean valid = true;
-                byte deviceAddr= 0, registerAddr= 0, nBytes= 0;
+        readBtn.setOnClickListener(v12 -> {
+            boolean valid = true;
+            byte deviceAddr= 0, registerAddr= 0, nBytes= 0;
 
-                try {
-                    deviceAddr= (byte) Short.parseShort(deviceAddrText.getEditableText().toString(), 16);
-                    deviceAddrWrapper.setError(null);
-                } catch (NumberFormatException e) {
-                    valid= false;
-                    deviceAddrWrapper.setError(e.getLocalizedMessage());
-                }
+            try {
+                deviceAddr= (byte) Short.parseShort(deviceAddrText.getEditableText().toString(), 16);
+                deviceAddrWrapper.setError(null);
+            } catch (NumberFormatException e) {
+                valid= false;
+                deviceAddrWrapper.setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    registerAddr= (byte) Short.parseShort(registerAddrText.getEditableText().toString(), 16);
-                    registerAddrWrapper.setError(null);
-                } catch (NumberFormatException e) {
-                    valid= false;
-                    registerAddrWrapper.setError(e.getLocalizedMessage());
-                }
+            try {
+                registerAddr= (byte) Short.parseShort(registerAddrText.getEditableText().toString(), 16);
+                registerAddrWrapper.setError(null);
+            } catch (NumberFormatException e) {
+                valid= false;
+                registerAddrWrapper.setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    nBytes= Byte.parseByte(nBytesText.getEditableText().toString());
-                    nBytesWrapper.setError(null);
-                } catch (NumberFormatException e) {
-                    valid= false;
-                    nBytesWrapper.setError(e.getLocalizedMessage());
-                }
+            try {
+                nBytes= Byte.parseByte(nBytesText.getEditableText().toString());
+                nBytesWrapper.setError(null);
+            } catch (NumberFormatException e) {
+                valid= false;
+                nBytesWrapper.setError(e.getLocalizedMessage());
+            }
 
-                if (valid) {
-                    i2cModule.readData(deviceAddr, registerAddr, nBytes).onComplete(new CompletionHandler<byte[]>() {
-                        @Override
-                        public void success(byte[] result) {
-                            i2cValueText.setText(arrayToHexString(result));
-                        }
-                    });
-                }
+            if (valid) {
+                serial.readI2cAsync(deviceAddr, registerAddr, nBytes)
+                        .continueWith(task -> {
+                            if (task.isFaulted()) {
+                                Snackbar.make(v12, task.getError().getLocalizedMessage(), Snackbar.LENGTH_LONG).show();
+                                Log.w("MetaWearApp", "Could not read I2C data", task.getError());
+                            } else {
+                                i2cValueText.setText(arrayToHexString(task.getResult()));
+                            }
+                            return null;
+                        }, Task.UI_THREAD_EXECUTOR);
             }
         });
 
         Button writeBtn= (Button) v.findViewById(R.id.layout_two_button_right);
         writeBtn.setText(R.string.label_write);
-        writeBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                boolean valid = true;
-                byte deviceAddr= 0, registerAddr= 0;
-                byte[] i2cValue= null;
+        writeBtn.setOnClickListener(v1 -> {
+            boolean valid = true;
+            byte deviceAddr= 0, registerAddr= 0;
+            byte[] i2cValue= null;
 
-                try {
-                    deviceAddr= (byte) Short.parseShort(deviceAddrText.getEditableText().toString(), 16);
-                    deviceAddrWrapper.setError(null);
-                } catch (NumberFormatException e) {
-                    valid= false;
-                    deviceAddrWrapper.setError(e.getLocalizedMessage());
-                }
+            try {
+                deviceAddr= (byte) Short.parseShort(deviceAddrText.getEditableText().toString(), 16);
+                deviceAddrWrapper.setError(null);
+            } catch (NumberFormatException e) {
+                valid= false;
+                deviceAddrWrapper.setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    registerAddr= (byte) Short.parseShort(registerAddrText.getEditableText().toString(), 16);
-                    registerAddrWrapper.setError(null);
-                } catch (NumberFormatException e) {
-                    valid= false;
-                    registerAddrWrapper.setError(e.getLocalizedMessage());
-                }
+            try {
+                registerAddr= (byte) Short.parseShort(registerAddrText.getEditableText().toString(), 16);
+                registerAddrWrapper.setError(null);
+            } catch (NumberFormatException e) {
+                valid= false;
+                registerAddrWrapper.setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    i2cValue= hexStringToArray(i2cValueText.getEditableText().toString());
-                    i2cValueWrapper.setError(null);
-                } catch (NumberFormatException e) {
-                    valid= false;
-                    i2cValueWrapper.setError(e.getLocalizedMessage());
-                }
+            try {
+                i2cValue= hexStringToArray(i2cValueText.getEditableText().toString());
+                i2cValueWrapper.setError(null);
+            } catch (NumberFormatException e) {
+                valid= false;
+                i2cValueWrapper.setError(e.getLocalizedMessage());
+            }
 
-                if (valid) {
-                    i2cModule.writeData(deviceAddr, registerAddr, i2cValue);
-                }
+            if (valid) {
+                serial.writeI2c(deviceAddr, registerAddr, i2cValue);
             }
         });
 
@@ -188,7 +189,7 @@ public class I2CFragment extends ModuleFragmentBase {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        i2cModule= mwBoard.getModule(I2C.class);
+        serial= mwBoard.getModuleOrThrow(SerialPassthrough.class);
     }
 
     @Override

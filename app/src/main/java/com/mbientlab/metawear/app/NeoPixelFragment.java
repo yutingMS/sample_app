@@ -58,13 +58,14 @@ public class NeoPixelFragment extends ModuleFragmentBase {
     }
 
     private NeoPixel neoPixelModule;
+    private NeoPixel.Strand[] strand = new NeoPixel.Strand[3];
 
     private PatternProgrammer[] programmer= new PatternProgrammer[] {
             new PatternProgrammer() {
                 @Override
                 public void program() {
                     for(byte i= 0; i < nLeds; i++) {
-                        neoPixelModule.setPixel(npStrand, i, (byte)0, (byte)-1, (byte)0);
+                        strand[npStrand].setRgb(i, (byte)0, (byte)-1, (byte)0);
                     }
                 }
             },
@@ -78,7 +79,7 @@ public class NeoPixelFragment extends ModuleFragmentBase {
                         double rRatio= Math.cos(step),
                                 gRatio= Math.cos(step + 2*Math.PI/3),
                                 bRatio= Math.cos(step + 4*Math.PI/3);
-                        neoPixelModule.setPixel(npStrand, i, (byte)((rRatio < 0 ? 0 : rRatio) * 255),
+                        strand[npStrand].setRgb(i, (byte)((rRatio < 0 ? 0 : rRatio) * 255),
                                 (byte)((gRatio < 0 ? 0 : gRatio) * 255),
                                 (byte)((bRatio < 0 ? 0 : bRatio) * 255));
                     }
@@ -174,154 +175,136 @@ public class NeoPixelFragment extends ModuleFragmentBase {
         View setupView= view.findViewById(R.id.neopixel_setup);
         Button initBtn= (Button) setupView.findViewById(R.id.layout_two_button_left);
         initBtn.setText(R.string.label_neopixel_initialize);
-        initBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                boolean valid = true;
+        initBtn.setOnClickListener(v -> {
+            boolean valid = true;
 
-                try {
-                    npStrand = Byte.valueOf(npStrandText.getText().toString());
-                    npStrandWrapper.setError(null);
-                } catch (Exception e) {
-                    npStrandWrapper.setError(e.getLocalizedMessage());
-                    valid = false;
-                }
+            try {
+                npStrand = Byte.valueOf(npStrandText.getText().toString());
+                npStrandWrapper.setError(null);
+            } catch (Exception e) {
+                npStrandWrapper.setError(e.getLocalizedMessage());
+                valid = false;
+            }
 
-                TextInputLayout dataPinWrapper = (TextInputLayout) view.findViewById(R.id.neopixel_data_pin_wrapper);
-                try {
-                    dataPin = Byte.valueOf(dataPinText.getText().toString());
-                    dataPinWrapper.setError(null);
-                } catch (Exception e) {
-                    dataPinWrapper.setError(e.getLocalizedMessage());
-                    valid = false;
-                }
+            TextInputLayout dataPinWrapper = (TextInputLayout) view.findViewById(R.id.neopixel_data_pin_wrapper);
+            try {
+                dataPin = Byte.valueOf(dataPinText.getText().toString());
+                dataPinWrapper.setError(null);
+            } catch (Exception e) {
+                dataPinWrapper.setError(e.getLocalizedMessage());
+                valid = false;
+            }
 
-                TextInputLayout nLedWrapper = (TextInputLayout) view.findViewById(R.id.neopixel_nleds_wrapper);
-                try {
-                    nLeds = Byte.valueOf(nLedText.getText().toString());
-                    nLedWrapper.setError(null);
-                } catch (Exception e) {
-                    nLedWrapper.setError(e.getLocalizedMessage());
-                    valid = false;
-                }
+            TextInputLayout nLedWrapper = (TextInputLayout) view.findViewById(R.id.neopixel_nleds_wrapper);
+            try {
+                nLeds = Byte.valueOf(nLedText.getText().toString());
+                nLedWrapper.setError(null);
+            } catch (Exception e) {
+                nLedWrapper.setError(e.getLocalizedMessage());
+                valid = false;
+            }
 
-                if (valid) {
-                    neoPixelModule.initializeStrand(npStrand, ColorOrdering.values()[orderingIndex], StrandSpeed.values()[speedIndex], dataPin, nLeds);
-                }
+            if (valid) {
+                strand[npStrand] = neoPixelModule.initializeStrand(npStrand, ColorOrdering.values()[orderingIndex], StrandSpeed.values()[speedIndex], dataPin, nLeds);
             }
         });
         Button freeBtn= (Button) setupView.findViewById(R.id.layout_two_button_right);
         freeBtn.setText(R.string.label_neopixel_free);
-        freeBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                try {
-                    npStrand = Byte.valueOf(npStrandText.getText().toString());
-                    npStrandWrapper.setError(null);
-                    neoPixelModule.deinitializeStrand(npStrand);
-                } catch (Exception e) {
-                    npStrandWrapper.setError(e.getLocalizedMessage());
-                }
+        freeBtn.setOnClickListener(v -> {
+            try {
+                npStrand = Byte.valueOf(npStrandText.getText().toString());
+                strand[npStrand].free();
+                npStrandWrapper.setError(null);
+            } catch (Exception e) {
+                npStrandWrapper.setError(e.getLocalizedMessage());
             }
         });
 
         View pixelView= view.findViewById(R.id.neopixel_pixel);
         Button setBtn= (Button) pixelView.findViewById(R.id.layout_two_button_left);
         setBtn.setText(R.string.label_gpio_set_output);
-        setBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                try {
-                    npStrand = Byte.valueOf(npStrandText.getText().toString());
-                    npStrandWrapper.setError(null);
+        setBtn.setOnClickListener(v -> {
+            try {
+                npStrand = Byte.valueOf(npStrandText.getText().toString());
+                npStrandWrapper.setError(null);
 
-                    neoPixelModule.holdStrand(npStrand);
-                    programmer[patternIndex].program();
-                    neoPixelModule.releaseHold(npStrand);
-                } catch (Exception e) {
-                    npStrandWrapper.setError(e.getLocalizedMessage());
-                }
+                strand[npStrand].hold();
+                programmer[patternIndex].program();
+                strand[npStrand].release();
+            } catch (Exception e) {
+                npStrandWrapper.setError(e.getLocalizedMessage());
             }
         });
         Button clearBtn= (Button) pixelView.findViewById(R.id.layout_two_button_right);
         clearBtn.setText(R.string.label_gpio_clear_output);
-        clearBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                boolean valid = true;
+        clearBtn.setOnClickListener(v -> {
+            boolean valid = true;
 
-                try {
-                    npStrand = Byte.valueOf(npStrandText.getText().toString());
-                    npStrandWrapper.setError(null);
-                } catch (Exception e) {
-                    npStrandWrapper.setError(e.getLocalizedMessage());
-                    valid = false;
-                }
+            try {
+                npStrand = Byte.valueOf(npStrandText.getText().toString());
+                npStrandWrapper.setError(null);
+            } catch (Exception e) {
+                npStrandWrapper.setError(e.getLocalizedMessage());
+                valid = false;
+            }
 
-                TextInputLayout nLedWrapper = (TextInputLayout) view.findViewById(R.id.neopixel_nleds_wrapper);
-                try {
-                    nLeds = Byte.valueOf(nLedText.getText().toString());
-                    nLedWrapper.setError(null);
-                } catch (Exception e) {
-                    nLedWrapper.setError(e.getLocalizedMessage());
-                    valid = false;
-                }
+            TextInputLayout nLedWrapper = (TextInputLayout) view.findViewById(R.id.neopixel_nleds_wrapper);
+            try {
+                nLeds = Byte.valueOf(nLedText.getText().toString());
+                nLedWrapper.setError(null);
+            } catch (Exception e) {
+                nLedWrapper.setError(e.getLocalizedMessage());
+                valid = false;
+            }
 
-                if (valid) {
-                    neoPixelModule.clearStrand(npStrand, (byte) 0, nLeds);
-                }
+            if (valid) {
+                strand[npStrand].clear((byte) 0, (byte) (nLeds - 1));
             }
         });
 
         View rotateView= view.findViewById(R.id.neopixel_rotate);
         Button rotateBtn= (Button) rotateView.findViewById(R.id.layout_two_button_left);
         rotateBtn.setText(R.string.label_neopixel_rotate);
-        rotateBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                boolean valid = true;
+        rotateBtn.setOnClickListener(v -> {
+            boolean valid = true;
 
-                try {
-                    npStrand = Byte.valueOf(npStrandText.getText().toString());
-                    npStrandWrapper.setError(null);
-                } catch (Exception e) {
-                    npStrandWrapper.setError(e.getLocalizedMessage());
-                    valid = false;
-                }
+            try {
+                npStrand = Byte.valueOf(npStrandText.getText().toString());
+                npStrandWrapper.setError(null);
+            } catch (Exception e) {
+                npStrandWrapper.setError(e.getLocalizedMessage());
+                valid = false;
+            }
 
-                TextInputLayout periodWrapper = (TextInputLayout) view.findViewById(R.id.neopixel_rot_period_wrapper);
-                try {
-                    period = Short.valueOf(rotPeriodText.getText().toString());
-                    periodWrapper.setError(null);
-                } catch (Exception e) {
-                    periodWrapper.setError(e.getLocalizedMessage());
-                    valid = false;
-                }
+            TextInputLayout periodWrapper = (TextInputLayout) view.findViewById(R.id.neopixel_rot_period_wrapper);
+            try {
+                period = Short.valueOf(rotPeriodText.getText().toString());
+                periodWrapper.setError(null);
+            } catch (Exception e) {
+                periodWrapper.setError(e.getLocalizedMessage());
+                valid = false;
+            }
 
-                if (valid) {
-                    neoPixelModule.rotate(npStrand, RotationDirection.values()[directionIndex], period);
-                }
+            if (valid) {
+                strand[npStrand].rotate(Strand.RotationDirection.values()[directionIndex], period);
             }
         });
         Button stopBtn= (Button) rotateView.findViewById(R.id.layout_two_button_right);
         stopBtn.setText(R.string.label_neopixel_stop);
-        stopBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                try {
-                    npStrand = Byte.valueOf(npStrandText.getText().toString());
-                    npStrandWrapper.setError(null);
-                    neoPixelModule.stopRotation(npStrand);
-                } catch (Exception e) {
-                    npStrandWrapper.setError(e.getLocalizedMessage());
-                }
+        stopBtn.setOnClickListener(v -> {
+            try {
+                npStrand = Byte.valueOf(npStrandText.getText().toString());
+                npStrandWrapper.setError(null);
+                strand[npStrand].stopRotation();
+            } catch (Exception e) {
+                npStrandWrapper.setError(e.getLocalizedMessage());
             }
         });
     }
 
     @Override
     protected void boardReady() throws UnsupportedModuleException{
-        neoPixelModule= mwBoard.getModule(NeoPixel.class);
+        neoPixelModule= mwBoard.getModuleOrThrow(NeoPixel.class);
     }
 
     @Override

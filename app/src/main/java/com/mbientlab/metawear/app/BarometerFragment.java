@@ -38,16 +38,12 @@ import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
+
+import com.mbientlab.metawear.Route;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
-import com.mbientlab.metawear.module.Barometer;
-import com.mbientlab.metawear.module.Bme280Barometer;
-import com.mbientlab.metawear.module.Bmp280Barometer;
-import com.mbientlab.metawear.module.Bmp280Barometer.FilterMode;
-import com.mbientlab.metawear.module.Bmp280Barometer.OversamplingMode;
+import com.mbientlab.metawear.module.BarometerBosch;
+import com.mbientlab.metawear.module.BarometerBosch.*;
 
 import java.io.FileOutputStream;
 import java.util.ArrayList;
@@ -59,34 +55,13 @@ import java.util.Locale;
  */
 public class BarometerFragment extends SensorFragment {
     private static final float BAROMETER_SAMPLE_FREQ = 26.32f, LIGHT_SAMPLE_PERIOD= 1 / BAROMETER_SAMPLE_FREQ;
-    private static String PRESSURE_STREAM_KEY= "pressure_stream", ALTITUDE_STREAM_KEY= "altitude";
 
-    private Barometer barometerModule;
+    private BarometerBosch barometer;
     private float altitudeMin, altitudeMax;
 
-    private RouteManager altitudeRouteManager= null;
+    private Route altitudeRoute = null;
     private final ArrayList<Entry> altitudeData= new ArrayList<>(), pressureData= new ArrayList<>();
 
-    private class BarometerMessageHandler implements RouteManager.MessageHandler {
-        private final ArrayList<Entry> dataEntries;
-        private final int setIndex;
-
-        public BarometerMessageHandler(ArrayList<Entry> dataEntries, int setIndex) {
-            this.dataEntries= dataEntries;
-            this.setIndex= setIndex;
-        }
-        @Override
-        public void process(Message message) {
-            final Float pressureValue = message.getData(Float.class);
-
-            LineData data = chart.getData();
-            if (dataEntries.size() >= sampleCount) {
-                data.addXValue(String.format(Locale.US, "%.2f", sampleCount * LIGHT_SAMPLE_PERIOD));
-                sampleCount++;
-            }
-            data.addEntry(new Entry(pressureValue, sampleCount), setIndex);
-        }
-    }
     public BarometerFragment() {
         super(R.string.navigation_fragment_barometer, R.layout.fragment_sensor, 80000, 110000);
         altitudeMin= -300;
@@ -95,7 +70,7 @@ public class BarometerFragment extends SensorFragment {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        barometerModule= mwBoard.getModule(Barometer.class);
+        barometer = mwBoard.getModuleOrThrow(BarometerBosch.class);
     }
 
     @Override
@@ -105,39 +80,38 @@ public class BarometerFragment extends SensorFragment {
 
     @Override
     protected void setup() {
-        if (barometerModule instanceof Bmp280Barometer) {
-            ((Bmp280Barometer) barometerModule).configure()
-                    .setPressureOversampling(OversamplingMode.ULTRA_HIGH)
-                    .setFilterMode(FilterMode.OFF)
-                    .setStandbyTime(Bmp280Barometer.StandbyTime.TIME_0_5)
-                    .commit();
-            ((Bmp280Barometer) barometerModule).enableAltitudeSampling();
-        } else if (barometerModule instanceof Bme280Barometer) {
-            ((Bme280Barometer) barometerModule).configure()
-                    .setPressureOversampling(OversamplingMode.ULTRA_HIGH)
-                    .setFilterMode(FilterMode.OFF)
-                    .setStandbyTime(Bme280Barometer.StandbyTime.TIME_0_5)
-                    .commit();
-            ((Bme280Barometer) barometerModule).enableAltitudeSampling();
-        }
-        barometerModule.routeData().fromPressure().stream(PRESSURE_STREAM_KEY).commit()
-                .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                    @Override
-                    public void success(RouteManager result) {
-                        streamRouteManager= result;
-                        result.subscribe(PRESSURE_STREAM_KEY, new BarometerMessageHandler(pressureData, 0));
-                    }
-                });
-        barometerModule.routeData().fromAltitude().stream(ALTITUDE_STREAM_KEY).commit()
-                .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                    @Override
-                    public void success(RouteManager result) {
-                        altitudeRouteManager= result;
-                        result.subscribe(ALTITUDE_STREAM_KEY, new BarometerMessageHandler(altitudeData, 1));
+        barometer.configure()
+                .pressureOversampling(OversamplingMode.ULTRA_HIGH)
+                .filterCoeff(FilterCoeff.OFF)
+                .standbyTime(0.5f)
+                .commit();
 
-                        barometerModule.start();
-                    }
-                });
+        barometer.pressure().addRouteAsync(source -> source.stream((data, env) -> {
+            LineData chartData = chart.getData();
+            if (pressureData.size() >= sampleCount) {
+                chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * LIGHT_SAMPLE_PERIOD));
+                sampleCount++;
+            }
+            chartData.addEntry(new Entry(data.value(Float.class), sampleCount), 0);
+        })).continueWithTask(task -> {
+            streamRoute = task.getResult();
+
+            return barometer.altitude().addRouteAsync(source -> source.stream((data, env) -> {
+                LineData chartData = chart.getData();
+                if (altitudeData.size() >= sampleCount) {
+                    chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * LIGHT_SAMPLE_PERIOD));
+                    sampleCount++;
+                }
+                chartData.addEntry(new Entry(data.value(Float.class), sampleCount), 1);
+            }));
+        }).continueWith(task -> {
+            altitudeRoute = task.getResult();
+
+            barometer.altitude().start();
+            barometer.pressure().start();
+            barometer.start();
+            return null;
+        });
     }
 
     @Override
@@ -156,11 +130,13 @@ public class BarometerFragment extends SensorFragment {
 
     @Override
     protected void clean() {
-        barometerModule.stop();
+        barometer.stop();
+        barometer.altitude().stop();
+        barometer.pressure().stop();
 
-        if (altitudeRouteManager != null) {
-            altitudeRouteManager.remove();
-            altitudeRouteManager= null;
+        if (altitudeRoute != null) {
+            altitudeRoute.remove();
+            altitudeRoute = null;
         }
     }
 

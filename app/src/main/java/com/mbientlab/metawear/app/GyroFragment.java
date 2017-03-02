@@ -39,12 +39,13 @@ import android.widget.Spinner;
 import android.widget.TextView;
 
 import com.github.mikephil.charting.components.YAxis;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.RouteManager;
+
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
-import com.mbientlab.metawear.module.Gyro;
+import com.mbientlab.metawear.data.AngularVelocity;
+import com.mbientlab.metawear.module.GyroBmi160;
+import com.mbientlab.metawear.module.GyroBmi160.*;
 
 /**
  * Created by etsai on 8/19/2015.
@@ -52,19 +53,18 @@ import com.mbientlab.metawear.module.Gyro;
 public class GyroFragment extends ThreeAxisChartFragment {
     private static final float[] AVAILABLE_RANGES= {125.f, 250.f, 500.f, 1000.f, 2000.f};
     private static final float INITIAL_RANGE= 125.f, GYR_ODR= 25.f;
-    private static final String STREAM_KEY= "gyro_stream";
 
-    private Gyro gyroModule= null;
+    private GyroBmi160 gyro = null;
     private int rangeIndex= 0;
 
     public GyroFragment() {
         super("rotation", R.layout.fragment_sensor_config_spinner,
-                R.string.navigation_fragment_gyro, STREAM_KEY, -INITIAL_RANGE, INITIAL_RANGE, GYR_ODR);
+                R.string.navigation_fragment_gyro, -INITIAL_RANGE, INITIAL_RANGE, GYR_ODR);
     }
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        gyroModule= mwBoard.getModule(Gyro.class);
+        gyro = mwBoard.getModuleOrThrow(GyroBmi160.class);
     }
 
     @Override
@@ -104,21 +104,25 @@ public class GyroFragment extends ThreeAxisChartFragment {
 
     @Override
     protected void setup() {
-        gyroModule.setOutputDataRate(GYR_ODR);
-        gyroModule.setAngularRateRange(AVAILABLE_RANGES[rangeIndex]);
+        gyro.configure()
+                .odr(OutputDataRate.ODR_25_HZ)
+                .range(Range.values()[rangeIndex])
+                .commit();
+        gyro.angularVelocity().addRouteAsync(source -> source.stream((data, env) -> {
+            final AngularVelocity value = data.value(AngularVelocity.class);
+            addChartData(value.x(), value.y(), value.z(), GYR_ODR);
+        })).continueWith(task -> {
+            streamRoute = task.getResult();
 
-        AsyncOperation<RouteManager> routeManagerResult= gyroModule.routeData().fromAxes().stream(STREAM_KEY).commit();
-        routeManagerResult.onComplete(dataStreamManager);
-        routeManagerResult.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-            @Override
-            public void success(RouteManager result) {
-                gyroModule.start();
-            }
+            gyro.angularVelocity().start();
+            gyro.start();
+
+            return null;
         });
     }
 
     @Override
     protected void clean() {
-        gyroModule.stop();
+        gyro.stop();
     }
 }

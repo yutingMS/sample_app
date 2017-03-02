@@ -41,27 +41,22 @@ import android.widget.TextView;
 import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
-import com.mbientlab.metawear.module.Ltr329AmbientLight;
+import com.mbientlab.metawear.module.AmbientLightLtr329;
+import com.mbientlab.metawear.module.AmbientLightLtr329.*;
 
 import java.util.Locale;
-
-import static com.mbientlab.metawear.module.Ltr329AmbientLight.*;
 
 /**
  * Created by etsai on 8/22/2015.
  */
 public class AmbientLightFragment extends SingleDataSensorFragment {
     private static final int LIGHT_SAMPLE_PERIOD= 50;
-    private static final String STREAM_KEY= "light_stream";
 
     private int sensorGainIndex= 0;
-    private Ltr329AmbientLight ltr329Module;
+    private AmbientLightLtr329 alsltr329;
     private long startTime= -1;
 
     public AmbientLightFragment() {
@@ -81,27 +76,27 @@ public class AmbientLightFragment extends SingleDataSensorFragment {
                 sensorGainIndex = position;
 
                 switch (Gain.values()[sensorGainIndex]) {
-                    case LTR329_GAIN_1X:
+                    case LTR329_1X:
                         min = 1f;
                         max = 64000f;
                         break;
-                    case LTR329_GAIN_2X:
+                    case LTR329_2X:
                         min = 0.5f;
                         max = 32000f;
                         break;
-                    case LTR329_GAIN_4X:
+                    case LTR329_4X:
                         min = 0.25f;
                         max = 16000f;
                         break;
-                    case LTR329_GAIN_8X:
+                    case LTR329_8X:
                         min = 0.125f;
                         max = 8000f;
                         break;
-                    case LTR329_GAIN_48X:
+                    case LTR329_48X:
                         min = 0.02f;
                         max = 1300f;
                         break;
-                    case LTR329_GAIN_96X:
+                    case LTR329_96X:
                         min = 0.01f;
                         max = 600f;
                         break;
@@ -126,7 +121,7 @@ public class AmbientLightFragment extends SingleDataSensorFragment {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        ltr329Module= mwBoard.getModule(Ltr329AmbientLight.class);
+        alsltr329 = mwBoard.getModuleOrThrow(AmbientLightLtr329.class);
     }
 
     @Override
@@ -136,42 +131,36 @@ public class AmbientLightFragment extends SingleDataSensorFragment {
 
     @Override
     protected void setup() {
-        ltr329Module.configure().setGain(Gain.values()[sensorGainIndex])
-                .setMeasurementRate(MeasurementRate.LTR329_RATE_50MS)
-                .setIntegrationTime(IntegrationTime.LTR329_TIME_50MS)
+        alsltr329.configure().gain(Gain.values()[sensorGainIndex])
+                .measurementRate(MeasurementRate.LTR329_RATE_50MS)
+                .integrationTime(IntegrationTime.LTR329_TIME_50MS)
                 .commit();
-        ltr329Module.routeData().fromSensor().stream(STREAM_KEY).commit()
-                .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                    @Override
-                    public void success(RouteManager result) {
-                        streamRouteManager= result;
-                        result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
-                            @Override
-                            public void process(Message msg) {
-                                final Float lux = msg.getData(Long.class) / 1000.f;
+        alsltr329.illuminance().addRouteAsync(source -> {
+            source.stream((data, env) -> {
+                final Float lux = data.value(Float.class);
 
-                                LineData data = chart.getData();
+                LineData chartData = chart.getData();
 
-                                if (startTime == -1) {
-                                    data.addXValue("0");
-                                    startTime= System.currentTimeMillis();
-                                } else {
-                                    data.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
-                                }
+                if (startTime == -1) {
+                    chartData.addXValue("0");
+                    startTime= System.currentTimeMillis();
+                } else {
+                    chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
+                }
+                chartData.addEntry(new Entry(lux, sampleCount), 0);
 
-                                data.addEntry(new Entry(lux, sampleCount), 0);
-
-                                sampleCount++;
-                            }
-                        });
-                        ltr329Module.start();
-                    }
-                });
+                sampleCount++;
+            });
+        }).continueWith(task -> {
+            streamRoute = task.getResult();
+            alsltr329.illuminance().start();
+            return null;
+        });
     }
 
     @Override
     protected void clean() {
-        ltr329Module.stop();
+        alsltr329.illuminance().stop();
     }
 
     @Override

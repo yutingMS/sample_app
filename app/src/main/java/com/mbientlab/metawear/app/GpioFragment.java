@@ -47,15 +47,11 @@ import android.widget.Spinner;
 import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.AsyncOperation.CompletionHandler;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
+import com.mbientlab.metawear.Subscriber;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
 import com.mbientlab.metawear.module.Gpio;
-import com.mbientlab.metawear.module.Gpio.AnalogReadMode;
 import com.mbientlab.metawear.module.Gpio.PullMode;
 import com.mbientlab.metawear.module.Timer;
 
@@ -65,7 +61,6 @@ import java.util.Locale;
  * Created by etsai on 8/21/2015.
  */
 public class GpioFragment extends SingleDataSensorFragment {
-    private static final String STREAM_KEY= "gpio_stream";
     private static final byte READ_ADC= 0, READ_ABS_REF= 1, READ_DIGITAL= 2, DEFAULT_GPIO_PIN= 0;
     private static final int GPIO_SAMPLE_PERIOD= 33;
     private static final int[] CONTROL_RES_IDS= {
@@ -76,33 +71,25 @@ public class GpioFragment extends SingleDataSensorFragment {
 
     private byte gpioPin= DEFAULT_GPIO_PIN;
     private int readMode= 0;
-    private Gpio gpioModule;
-    private Timer timerModule;
+    private Gpio gpio;
+    private Timer timer;
+    private Timer.ScheduledTask scheduledTask;
     private long startTime= -1;
 
-    private final CompletionHandler<RouteManager> GpioStreamSetup= new CompletionHandler<RouteManager>() {
-        @Override
-        public void success(RouteManager result) {
-            streamRouteManager= result;
-            result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
-                @Override
-                public void process(Message message) {
-                    final Short gpioValue = message.getData(Short.class);
+    private final Subscriber gpioSubscriber = (data, env) -> {
+        final Short gpioValue = data.value(Short.class);
 
-                    LineData data = chart.getData();
-                    if (startTime == -1) {
-                        data.addXValue("0");
-                        startTime= System.currentTimeMillis();
-                    } else {
-                        data.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
-                    }
-
-                    data.addEntry(new Entry(gpioValue, sampleCount), 0);
-
-                    sampleCount++;
-                }
-            });
+        LineData chartData = chart.getData();
+        if (startTime == -1) {
+            chartData.addXValue("0");
+            startTime= System.currentTimeMillis();
+        } else {
+            chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
         }
+
+        chartData.addEntry(new Entry(gpioValue, sampleCount), 0);
+
+        sampleCount++;
     };
 
     public GpioFragment() {
@@ -132,7 +119,7 @@ public class GpioFragment extends SingleDataSensorFragment {
                         csvHeaderDataName = "adc";
                         break;
                     case READ_ABS_REF:
-                        max = 3000;
+                        max = 3.f;
                         leftAxis.setAxisMaxValue(max);
                         csvHeaderDataName = "abs reference";
                         break;
@@ -187,48 +174,23 @@ public class GpioFragment extends SingleDataSensorFragment {
             }
         });
 
-        view.findViewById(R.id.gpio_digital_up).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                gpioModule.setPinPullMode(gpioPin, PullMode.PULL_UP);
-            }
-        });
-        view.findViewById(R.id.gpio_digital_down).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                gpioModule.setPinPullMode(gpioPin, PullMode.PULL_DOWN);
-            }
-        });
-        view.findViewById(R.id.gpio_digital_none).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                gpioModule.setPinPullMode(gpioPin, PullMode.NO_PULL);
-            }
-        });
+        view.findViewById(R.id.gpio_digital_up).setOnClickListener(v -> gpio.pin(gpioPin).setPullMode(PullMode.PULL_UP));
+        view.findViewById(R.id.gpio_digital_down).setOnClickListener(v -> gpio.pin(gpioPin).setPullMode(PullMode.PULL_DOWN));
+        view.findViewById(R.id.gpio_digital_none).setOnClickListener(v -> gpio.pin(gpioPin).setPullMode(PullMode.NO_PULL));
 
         Button setDoBtn= (Button) view.findViewById(R.id.gpio_output_set);
         setDoBtn.setText(R.string.value_gpio_output_set);
-        setDoBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                gpioModule.setDigitalOut(gpioPin);
-            }
-        });
+        setDoBtn.setOnClickListener(v -> gpio.pin(gpioPin).setOutput());
 
         Button clearDoBtn= (Button) view.findViewById(R.id.gpio_output_clear);
         clearDoBtn.setText(R.string.value_gpio_output_clear);
-        clearDoBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                gpioModule.clearDigitalOut(gpioPin);
-            }
-        });
+        clearDoBtn.setOnClickListener(v -> gpio.pin(gpioPin).clearOutput());
     }
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        gpioModule= mwBoard.getModule(Gpio.class);
-        timerModule= mwBoard.getModule(Timer.class);
+        gpio = mwBoard.getModuleOrThrow(Gpio.class);
+        timer = mwBoard.getModuleOrThrow(Timer.class);
     }
 
     @Override
@@ -243,47 +205,55 @@ public class GpioFragment extends SingleDataSensorFragment {
     protected void setup() {
         switch(readMode) {
             case READ_ADC:
-                gpioModule.routeData().fromAnalogIn(gpioPin, AnalogReadMode.ADC).stream(STREAM_KEY).commit()
-                        .onComplete(GpioStreamSetup);
+                gpio.pin(gpioPin).analogAdc().addRouteAsync(source -> source.stream(gpioSubscriber));
                 break;
             case READ_ABS_REF:
-                gpioModule.routeData().fromAnalogIn(gpioPin, AnalogReadMode.ABS_REFERENCE).stream(STREAM_KEY).commit()
-                        .onComplete(GpioStreamSetup);
+                gpio.pin(gpioPin).analogAbsRef().addRouteAsync(source -> source.stream((data, env) -> {
+                    final Float voltage = data.value(Float.class);
+
+                    LineData chartData = chart.getData();
+                    if (startTime == -1) {
+                        chartData.addXValue("0");
+                        startTime= System.currentTimeMillis();
+                    } else {
+                        chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
+                    }
+
+                    chartData.addEntry(new Entry(voltage, sampleCount), 0);
+
+                    sampleCount++;
+                }));
                 break;
             case READ_DIGITAL:
-                gpioModule.routeData().fromDigitalIn(gpioPin).stream(STREAM_KEY).commit()
-                        .onComplete(GpioStreamSetup);
+                gpio.pin(gpioPin).digital().addRouteAsync(source -> source.stream(gpioSubscriber));
                 break;
         }
         filenameExtraString= String.format(Locale.US, "%s_pin_%d", csvHeaderDataName, gpioPin);
-        timerModule.scheduleTask(new Timer.Task() {
-            @Override
-            public void commands() {
-                switch(readMode) {
-                    case READ_ADC:
-                        gpioModule.readAnalogIn(gpioPin, AnalogReadMode.ADC);
-                        break;
-                    case READ_ABS_REF:
-                        gpioModule.readAnalogIn(gpioPin, AnalogReadMode.ABS_REFERENCE);
-                        break;
-                    case READ_DIGITAL:
-                        gpioModule.readDigitalIn(gpioPin);
-                        break;
-                    default:
-                        throw new RuntimeException("Unrecognized read mode: " + readMode);
-                }
+        timer.scheduleAsync(GPIO_SAMPLE_PERIOD, false, () -> {
+            switch(readMode) {
+                case READ_ADC:
+                    gpio.pin(gpioPin).analogAdc().read();
+                    break;
+                case READ_ABS_REF:
+                    gpio.pin(gpioPin).analogAbsRef().read();
+                    break;
+                case READ_DIGITAL:
+                    gpio.pin(gpioPin).digital().read();
+                    break;
+                default:
+                    throw new RuntimeException("Unrecognized read mode: " + readMode);
             }
-        }, GPIO_SAMPLE_PERIOD, false).onComplete(new AsyncOperation.CompletionHandler<Timer.Controller>() {
-            @Override
-            public void success(Timer.Controller result) {
-                result.start();
-            }
+        }).continueWith(task -> {
+            scheduledTask = task.getResult();
+            scheduledTask.start();
+
+            return null;
         });
     }
 
     @Override
     protected void clean() {
-        timerModule.removeTimers();
+        scheduledTask.remove();
     }
 
     @Override

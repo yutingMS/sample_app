@@ -34,7 +34,6 @@ package com.mbientlab.metawear.app;
 import android.content.Context;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -45,15 +44,13 @@ import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
-import com.mbientlab.metawear.module.SensorFusion;
-import com.mbientlab.metawear.module.SensorFusion.EulerAngle;
-import com.mbientlab.metawear.module.SensorFusion.Quaternion;
+import com.mbientlab.metawear.data.EulerAngles;
+import com.mbientlab.metawear.data.Quaternion;
+import com.mbientlab.metawear.module.SensorFusionBosch;
+import com.mbientlab.metawear.module.SensorFusionBosch.*;
 
 import java.io.FileOutputStream;
 import java.util.ArrayList;
@@ -65,12 +62,10 @@ import java.util.Locale;
  */
 
 public class SensorFusionFragment extends SensorFragment {
-    private static final String STREAM_KEY= "sensor_fusion_stream";
     private static final float SAMPLING_PERIOD = 1/100f;
 
     private final ArrayList<Entry> x0 = new ArrayList<>(), x1 = new ArrayList<>(), x2 = new ArrayList<>(), x3 = new ArrayList<>();
-    private SensorFusion sensorFusion;
-    private Spinner fusionModeSelection;
+    private SensorFusionBosch sensorFusion;
     private int srcIndex = 0;
 
     public SensorFusionFragment() {
@@ -83,7 +78,7 @@ public class SensorFusionFragment extends SensorFragment {
 
         ((TextView) view.findViewById(R.id.config_option_title)).setText(R.string.config_name_sensor_fusion_data);
 
-        fusionModeSelection = (Spinner) view.findViewById(R.id.config_option_spinner);
+        Spinner fusionModeSelection = (Spinner) view.findViewById(R.id.config_option_spinner);
         fusionModeSelection.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -115,63 +110,49 @@ public class SensorFusionFragment extends SensorFragment {
     @Override
     protected void setup() {
         sensorFusion.configure()
-                .setMode(SensorFusion.Mode.NDOF)
-                .setAccRange(SensorFusion.AccRange.AR_16G)
-                .setGyroRange(SensorFusion.GyroRange.GR_2000DPS)
+                .mode(Mode.NDOF)
+                .accRange(AccRange.AR_16G)
+                .gyroRange(GyroRange.GR_2000DPS)
                 .commit();
 
         if (srcIndex == 0) {
-            sensorFusion.routeData().fromQuaternions().stream(STREAM_KEY).commit()
-                    .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            streamRouteManager= result;
-                            result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message message) {
-                                    final Quaternion quaternion = message.getData(Quaternion.class);
+            sensorFusion.quaternion().addRouteAsync(source -> source.stream((data, env) -> {
+                LineData chartData = chart.getData();
 
-                                    LineData data = chart.getData();
+                final Quaternion quaternion = data.value(Quaternion.class);
+                chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * SAMPLING_PERIOD));
+                chartData.addEntry(new Entry(quaternion.w(), sampleCount), 0);
+                chartData.addEntry(new Entry(quaternion.x(), sampleCount), 1);
+                chartData.addEntry(new Entry(quaternion.y(), sampleCount), 2);
+                chartData.addEntry(new Entry(quaternion.z(), sampleCount), 3);
 
-                                    data.addXValue(String.format(Locale.US, "%.2f", sampleCount * SAMPLING_PERIOD));
-                                    data.addEntry(new Entry(quaternion.w(), sampleCount), 0);
-                                    data.addEntry(new Entry(quaternion.x(), sampleCount), 1);
-                                    data.addEntry(new Entry(quaternion.y(), sampleCount), 2);
-                                    data.addEntry(new Entry(quaternion.z(), sampleCount), 3);
+                sampleCount++;
+            })).continueWith(task -> {
+                streamRoute = task.getResult();
+                sensorFusion.quaternion().start();
+                sensorFusion.start();
 
-                                    sampleCount++;
-                                }
-                            });
-
-                            sensorFusion.start(SensorFusion.DataOutput.QUATERNION);
-                        }
-                    });
+                return null;
+            });
         } else {
-            sensorFusion.routeData().fromEulerAngles().stream(STREAM_KEY).commit()
-                    .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            streamRouteManager= result;
-                            result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message message) {
-                                    final EulerAngle angles = message.getData(EulerAngle.class);
+            sensorFusion.eulerAngles().addRouteAsync(source -> source.stream((data, env) -> {
+                LineData chartData = chart.getData();
 
-                                    LineData data = chart.getData();
+                final EulerAngles angles = data.value(EulerAngles.class);
+                chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * SAMPLING_PERIOD));
+                chartData.addEntry(new Entry(angles.heading(), sampleCount), 0);
+                chartData.addEntry(new Entry(angles.pitch(), sampleCount), 1);
+                chartData.addEntry(new Entry(angles.roll(), sampleCount), 2);
+                chartData.addEntry(new Entry(angles.yaw(), sampleCount), 3);
 
-                                    data.addXValue(String.format(Locale.US, "%.2f", sampleCount * SAMPLING_PERIOD));
-                                    data.addEntry(new Entry(angles.heading(), sampleCount), 0);
-                                    data.addEntry(new Entry(angles.pitch(), sampleCount), 1);
-                                    data.addEntry(new Entry(angles.roll(), sampleCount), 2);
-                                    data.addEntry(new Entry(angles.yaw(), sampleCount), 3);
+                sampleCount++;
+            })).continueWith(task -> {
+                streamRoute = task.getResult();
+                sensorFusion.eulerAngles().start();
+                sensorFusion.start();
 
-                                    sampleCount++;
-                                }
-                            });
-
-                            sensorFusion.start(SensorFusion.DataOutput.EULER_ANGLES);
-                        }
-                    });
+                return null;
+            });
         }
     }
 
@@ -243,7 +224,7 @@ public class SensorFusionFragment extends SensorFragment {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        sensorFusion = mwBoard.getModule(SensorFusion.class);
+        sensorFusion = mwBoard.getModuleOrThrow(SensorFusionBosch.class);
     }
 
     @Override

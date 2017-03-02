@@ -37,10 +37,6 @@ import android.graphics.Color;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
-import com.mbientlab.metawear.data.CartesianFloat;
 
 import java.io.FileOutputStream;
 import java.util.ArrayList;
@@ -52,42 +48,28 @@ import java.util.Locale;
  */
 public abstract class ThreeAxisChartFragment extends SensorFragment {
     private final ArrayList<Entry> xAxisData= new ArrayList<>(), yAxisData= new ArrayList<>(), zAxisData= new ArrayList<>();
-    private final String dataType, streamKey;
+    private final String dataType;
     protected float samplePeriod;
 
-    protected final AsyncOperation.CompletionHandler<RouteManager> dataStreamManager= new AsyncOperation.CompletionHandler<RouteManager>() {
-        @Override
-        public void success(RouteManager result) {
-            streamRouteManager= result;
-            result.subscribe(streamKey, new RouteManager.MessageHandler() {
-                @Override
-                public void process(Message message) {
-                    final CartesianFloat spin = message.getData(CartesianFloat.class);
+    protected void addChartData(float x0, float x1, float x2, float samplePeriod) {
+        LineData chartData = chart.getData();
+        chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplePeriod));
+        chartData.addEntry(new Entry(x0, sampleCount), 0);
+        chartData.addEntry(new Entry(x1, sampleCount), 1);
+        chartData.addEntry(new Entry(x2, sampleCount), 2);
 
-                    LineData data = chart.getData();
+        sampleCount++;
+    }
 
-                    data.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplePeriod));
-                    data.addEntry(new Entry(spin.x(), sampleCount), 0);
-                    data.addEntry(new Entry(spin.y(), sampleCount), 1);
-                    data.addEntry(new Entry(spin.z(), sampleCount), 2);
-
-                    sampleCount++;
-                }
-            });
-        }
-    };
-
-    protected ThreeAxisChartFragment(String dataType, int layoutId, int sensorResId, String streamKey, float min, float max, float sampleFreq) {
+    protected ThreeAxisChartFragment(String dataType, int layoutId, int sensorResId, float min, float max, float sampleFreq) {
         super(sensorResId, layoutId, min, max);
         this.dataType= dataType;
-        this.streamKey= streamKey;
         this.samplePeriod= 1 / sampleFreq;
     }
 
-    protected ThreeAxisChartFragment(String dataType, int layoutId, int sensorResId, String streamKey, float min, float max) {
+    protected ThreeAxisChartFragment(String dataType, int layoutId, int sensorResId, float min, float max) {
         super(sensorResId, layoutId, min, max);
         this.dataType= dataType;
-        this.streamKey= streamKey;
         this.samplePeriod= -1.f;
     }
 

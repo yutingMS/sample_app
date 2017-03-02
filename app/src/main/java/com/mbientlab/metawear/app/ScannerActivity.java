@@ -12,10 +12,12 @@ import android.os.Bundle;
 
 import com.mbientlab.bletoolbox.scanner.BleScannerFragment;
 import com.mbientlab.bletoolbox.scanner.BleScannerFragment.*;
-import com.mbientlab.metawear.MetaWearBleService;
 import com.mbientlab.metawear.MetaWearBoard;
+import com.mbientlab.metawear.android.BtleService;
 
 import java.util.UUID;
+
+import bolts.Task;
 
 public class ScannerActivity extends AppCompatActivity implements ScannerCommunicationBus, ServiceConnection {
     private final static UUID[] serviceUuids;
@@ -23,12 +25,24 @@ public class ScannerActivity extends AppCompatActivity implements ScannerCommuni
 
     static {
         serviceUuids= new UUID[] {
-                MetaWearBoard.METAWEAR_SERVICE_UUID,
-                MetaWearBoard.METABOOT_SERVICE_UUID
+                MetaWearBoard.METAWEAR_GATT_SERVICE,
+                MetaWearBoard.METABOOT_SERVICE
         };
     }
 
-    private MetaWearBleService.LocalBinder serviceBinder;
+    public static Task<Void> reconnect(final MetaWearBoard board) {
+        return board.connectAsync()
+                .continueWithTask(task -> {
+                    if (task.isFaulted()) {
+                        return reconnect(board);
+                    } else if (task.isCancelled()) {
+                        return task;
+                    }
+                    return Task.forResult(null);
+                });
+    }
+
+    private BtleService.LocalBinder serviceBinder;
     private MetaWearBoard mwBoard;
 
     @Override
@@ -36,7 +50,7 @@ public class ScannerActivity extends AppCompatActivity implements ScannerCommuni
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_scanner);
 
-        getApplicationContext().bindService(new Intent(this, MetaWearBleService.class), this, BIND_AUTO_CREATE);
+        getApplicationContext().bindService(new Intent(this, BtleService.class), this, BIND_AUTO_CREATE);
     }
 
     @Override
@@ -59,7 +73,9 @@ public class ScannerActivity extends AppCompatActivity implements ScannerCommuni
 
     @Override
     public void onDeviceSelected(final BluetoothDevice btDevice) {
+        serviceBinder.removeMetaWearBoard(btDevice);
         mwBoard= serviceBinder.getMetaWearBoard(btDevice);
+
 
         final ProgressDialog connectDialog = new ProgressDialog(this);
         connectDialog.setTitle(getString(R.string.title_connecting));
@@ -67,40 +83,32 @@ public class ScannerActivity extends AppCompatActivity implements ScannerCommuni
         connectDialog.setCancelable(false);
         connectDialog.setCanceledOnTouchOutside(false);
         connectDialog.setIndeterminate(true);
-        connectDialog.setButton(DialogInterface.BUTTON_NEGATIVE, getString(R.string.label_cancel), new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialogInterface, int i) {
-                mwBoard.disconnect();
-            }
+        connectDialog.setButton(DialogInterface.BUTTON_NEGATIVE, getString(R.string.label_cancel), (dialogInterface, i) -> {
+            mwBoard.disconnectAsync();
         });
         connectDialog.show();
 
-        mwBoard.setConnectionStateHandler(new MetaWearBoard.ConnectionStateHandler() {
-            @Override
-            public void connected() {
-                connectDialog.dismiss();
-                Intent navActivityIntent = new Intent(ScannerActivity.this, NavigationActivity.class);
-                navActivityIntent.putExtra(NavigationActivity.EXTRA_BT_DEVICE, btDevice);
-                startActivityForResult(navActivityIntent, REQUEST_START_APP);
-            }
-
-            @Override
-            public void disconnected() {
-                mwBoard.connect();
-            }
-
-            @Override
-            public void failure(int status, Throwable error) {
-                mwBoard.connect();
-            }
-        });
-        mwBoard.connect();
+        mwBoard.connectAsync()
+                .continueWithTask(task -> {
+                    if (task.isCancelled()) {
+                        return task;
+                    }
+                    return task.isFaulted() ? reconnect(mwBoard) : Task.forResult(null);
+                })
+                .continueWith(task -> {
+                    if (!task.isCancelled()) {
+                        runOnUiThread(connectDialog::dismiss);
+                        Intent navActivityIntent = new Intent(ScannerActivity.this, NavigationActivity.class);
+                        navActivityIntent.putExtra(NavigationActivity.EXTRA_BT_DEVICE, btDevice);
+                        startActivityForResult(navActivityIntent, REQUEST_START_APP);
+                    }
+                    return null;
+                });
     }
 
     @Override
     public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
-        serviceBinder = (MetaWearBleService.LocalBinder) iBinder;
-        serviceBinder.executeOnUiThread();
+        serviceBinder = (BtleService.LocalBinder) iBinder;
     }
 
     @Override

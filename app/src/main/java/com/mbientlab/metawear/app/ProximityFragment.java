@@ -33,13 +33,13 @@ package com.mbientlab.metawear.app;
 
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
-import com.mbientlab.metawear.AsyncOperation;
-import com.mbientlab.metawear.Message;
-import com.mbientlab.metawear.RouteManager;
+
+import com.mbientlab.metawear.ForcedDataProducer;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
+import com.mbientlab.metawear.module.ProximityTsl2671;
+import com.mbientlab.metawear.module.ProximityTsl2671.TransmitterDriveCurrent;
 import com.mbientlab.metawear.module.Timer;
-import com.mbientlab.metawear.module.Tsl2671Proximity;
 
 import java.util.Locale;
 
@@ -48,11 +48,10 @@ import java.util.Locale;
  */
 public class ProximityFragment extends SingleDataSensorFragment {
     private static final int PROXIMITY_SAMPLE_PERIOD = 33;
-    private static final String STREAM_KEY= "proximity_stream";
-
     private long startTime= -1;
-    private Tsl2671Proximity proximityyModule;
-    private Timer timerModule;
+    private ProximityTsl2671 proximity;
+    private Timer timer;
+    private Timer.ScheduledTask scheduledTask;
 
     public ProximityFragment() {
         super(R.string.navigation_fragment_proximity, "adc", R.layout.fragment_sensor, PROXIMITY_SAMPLE_PERIOD / 1000.f, 0, 1024);
@@ -60,55 +59,42 @@ public class ProximityFragment extends SingleDataSensorFragment {
 
     @Override
     protected void setup() {
-        proximityyModule.configure()
-                .setTransmitterDriver(Tsl2671Proximity.TransmitterDrive.CURRENT_12_5MA)
+        ForcedDataProducer proximityAdc = proximity.adc();
+        proximity.configure()
+                .transmitterDriveCurrent(TransmitterDriveCurrent.CURRENT_12_5MA)
                 .commit();
-        proximityyModule.routeData().fromSensor(false).stream(STREAM_KEY).commit()
-                .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                    @Override
-                    public void success(RouteManager result) {
-                        streamRouteManager= result;
-                        result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
-                            @Override
-                            public void process(Message message) {
-                                LineData data = chart.getData();
+        proximityAdc.addRouteAsync(source -> source.stream((data, env) -> {
+            LineData chartData = chart.getData();
 
-                                if (startTime == -1) {
-                                    data.addXValue("0");
-                                    startTime = System.currentTimeMillis();
-                                } else {
-                                    data.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
-                                }
-
-                                data.addEntry(new Entry(message.getData(Integer.class), sampleCount), 0);
-
-                                sampleCount++;
-                            }
-                        });
-                    }
-                });
-        timerModule.scheduleTask(new Timer.Task() {
-            @Override
-            public void commands() {
-                proximityyModule.readProximity(false);
+            if (startTime == -1) {
+                chartData.addXValue("0");
+                startTime = System.currentTimeMillis();
+            } else {
+                chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * samplingPeriod));
             }
-        }, PROXIMITY_SAMPLE_PERIOD, false).onComplete(new AsyncOperation.CompletionHandler<Timer.Controller>() {
-            @Override
-            public void success(Timer.Controller result) {
-                result.start();
-            }
+            chartData.addEntry(new Entry(data.value(Integer.class), sampleCount), 0);
+
+            sampleCount++;
+        })).continueWithTask(task -> {
+            streamRoute = task.getResult();
+            return timer.scheduleAsync(PROXIMITY_SAMPLE_PERIOD, false, proximityAdc::read);
+        }).continueWith(task -> {
+            scheduledTask = task.getResult();
+            scheduledTask.start();
+
+            return null;
         });
     }
 
     @Override
     protected void clean() {
-        timerModule.removeTimers();
+        scheduledTask.remove();
     }
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        proximityyModule= mwBoard.getModule(Tsl2671Proximity.class);
-        timerModule= mwBoard.getModule(Timer.class);
+        proximity = mwBoard.getModuleOrThrow(ProximityTsl2671.class);
+        timer = mwBoard.getModuleOrThrow(Timer.class);
     }
 
     @Override

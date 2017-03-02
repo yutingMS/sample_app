@@ -39,13 +39,14 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 
-import com.mbientlab.metawear.AsyncOperation.CompletionHandler;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
 import com.mbientlab.metawear.module.IBeacon;
 
 import java.util.UUID;
+
+import bolts.Task;
 
 /**
  * Created by etsai on 8/22/2015.
@@ -60,8 +61,6 @@ public class IBeaconFragment extends ModuleFragmentBase {
         };
     }
 
-    private CompletionHandler<IBeacon.Configuration> readConfigHandler;
-    private boolean isReady;
     private IBeacon ibeaconModule;
 
     private UUID uuid;
@@ -74,10 +73,22 @@ public class IBeaconFragment extends ModuleFragmentBase {
 
     @Override
     protected void boardReady() throws UnsupportedModuleException {
-        isReady= true;
-        ibeaconModule= mwBoard.getModule(IBeacon.class);
+        ibeaconModule= mwBoard.getModuleOrThrow(IBeacon.class);
 
-        ibeaconModule.readConfiguration().onComplete(readConfigHandler);
+        ibeaconModule.readConfigAsync().continueWith(task -> {
+            final int[] configEditText= new int[] {
+                    R.id.ibeacon_uuid_value, R.id.ibeacon_major_value, R.id.ibeacon_minor_value, R.id.ibeacon_rx_power_value,
+                    R.id.ibeacon_tx_power_value, R.id.ibeacon_period_value
+            };
+            Object[] values= new Object[] {task.getResult().uuid, task.getResult().major, task.getResult().minor,
+                    task.getResult().rxPower, task.getResult().txPower, task.getResult().period
+            };
+            for (int i= 0; i < values.length; i++) {
+                ((EditText) getView().findViewById(configEditText[i])).setText(values[i].toString());
+            }
+
+            return null;
+        }, Task.UI_THREAD_EXECUTOR);
     }
 
     @Override
@@ -104,103 +115,77 @@ public class IBeaconFragment extends ModuleFragmentBase {
 
         Button enableBtn= (Button) iBeaconControl.findViewById(R.id.layout_two_button_left);
         enableBtn.setText(R.string.label_enable);
-        iBeaconControl.findViewById(R.id.layout_two_button_left).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View innerView) {
-                TextInputLayout[] inputLayouts = new TextInputLayout[CONFIG_WRAPPERS.length];
-                for (int i = 0; i < CONFIG_WRAPPERS.length; i++) {
-                    inputLayouts[i] = (TextInputLayout) view.findViewById(CONFIG_WRAPPERS[i]);
-                }
+        iBeaconControl.findViewById(R.id.layout_two_button_left).setOnClickListener(innerView -> {
+            TextInputLayout[] inputLayouts = new TextInputLayout[CONFIG_WRAPPERS.length];
+            for (int i = 0; i < CONFIG_WRAPPERS.length; i++) {
+                inputLayouts[i] = (TextInputLayout) view.findViewById(CONFIG_WRAPPERS[i]);
+            }
 
-                boolean valid = true;
+            boolean valid = true;
 
-                try {
-                    uuid = UUID.fromString(((EditText) view.findViewById(R.id.ibeacon_uuid_value)).getText().toString());
-                    inputLayouts[0].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[0].setError(e.getLocalizedMessage());
-                }
+            try {
+                uuid = UUID.fromString(((EditText) view.findViewById(R.id.ibeacon_uuid_value)).getText().toString());
+                inputLayouts[0].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[0].setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    major = Short.valueOf(((EditText) view.findViewById(R.id.ibeacon_major_value)).getText().toString());
-                    inputLayouts[1].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[1].setError(e.getLocalizedMessage());
-                }
+            try {
+                major = Short.valueOf(((EditText) view.findViewById(R.id.ibeacon_major_value)).getText().toString());
+                inputLayouts[1].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[1].setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    minor = Short.valueOf(((EditText) view.findViewById(R.id.ibeacon_minor_value)).getText().toString());
-                    inputLayouts[2].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[2].setError(e.getLocalizedMessage());
-                }
+            try {
+                minor = Short.valueOf(((EditText) view.findViewById(R.id.ibeacon_minor_value)).getText().toString());
+                inputLayouts[2].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[2].setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    rxPower = Byte.valueOf(((EditText) view.findViewById(R.id.ibeacon_rx_power_value)).getText().toString());
-                    inputLayouts[3].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[3].setError(e.getLocalizedMessage());
-                }
+            try {
+                rxPower = Byte.valueOf(((EditText) view.findViewById(R.id.ibeacon_rx_power_value)).getText().toString());
+                inputLayouts[3].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[3].setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    txPower = Byte.valueOf(((EditText) view.findViewById(R.id.ibeacon_tx_power_value)).getText().toString());
-                    inputLayouts[4].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[4].setError(e.getLocalizedMessage());
-                }
+            try {
+                txPower = Byte.valueOf(((EditText) view.findViewById(R.id.ibeacon_tx_power_value)).getText().toString());
+                inputLayouts[4].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[4].setError(e.getLocalizedMessage());
+            }
 
-                try {
-                    period = Short.valueOf(((EditText) view.findViewById(R.id.ibeacon_period_value)).getText().toString());
-                    inputLayouts[5].setError(null);
-                } catch (Exception e) {
-                    valid = false;
-                    inputLayouts[5].setError(e.getLocalizedMessage());
-                }
+            try {
+                period = Short.valueOf(((EditText) view.findViewById(R.id.ibeacon_period_value)).getText().toString());
+                inputLayouts[5].setError(null);
+            } catch (Exception e) {
+                valid = false;
+                inputLayouts[5].setError(e.getLocalizedMessage());
+            }
 
-                if (valid) {
-                    ibeaconModule.configure()
-                            .setUUID(uuid)
-                            .setMajor(major)
-                            .setMinor(minor)
-                            .setAdPeriod(period)
-                            .setRxPower(rxPower)
-                            .setTxPower(txPower)
-                            .commit();
-                    ibeaconModule.enable();
-                }
+            if (valid) {
+                ibeaconModule.configure()
+                        .uuid(uuid)
+                        .major(major)
+                        .minor(minor)
+                        .period(period)
+                        .rxPower(rxPower)
+                        .txPower(txPower)
+                        .commit();
+                ibeaconModule.enable();
             }
         });
 
         Button disableBtn= (Button) iBeaconControl.findViewById(R.id.layout_two_button_right);
         disableBtn.setText(R.string.label_disable);
-        iBeaconControl.findViewById(R.id.layout_two_button_right).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                ibeaconModule.disable();
-            }
-        });
-
-        readConfigHandler = new CompletionHandler<IBeacon.Configuration>() {
-            @Override
-            public void success(IBeacon.Configuration result) {
-                final int[] configEditText= new int[] {
-                        R.id.ibeacon_uuid_value, R.id.ibeacon_major_value, R.id.ibeacon_minor_value, R.id.ibeacon_rx_power_value,
-                        R.id.ibeacon_tx_power_value, R.id.ibeacon_period_value
-                };
-                Object[] values= new Object[] {result.adUuid(), result.major(), result.minor(), result.rxPower(), result.txPower(), result.adPeriod()};
-                for (int i= 0; i < values.length; i++) {
-                    ((EditText) view.findViewById(configEditText[i])).setText(values[i].toString());
-                }
-            }
-        };
-
-        if (isReady) {
-            ibeaconModule.readConfiguration().onComplete(readConfigHandler);
-        }
+        iBeaconControl.findViewById(R.id.layout_two_button_right).setOnClickListener(view1 -> ibeaconModule.disable());
     }
 }
