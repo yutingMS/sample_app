@@ -31,6 +31,7 @@
 
 package com.mbientlab.metawear.app;
 
+import com.mbientlab.metawear.AsyncDataProducer;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
 import com.mbientlab.metawear.data.MagneticField;
@@ -40,7 +41,7 @@ import com.mbientlab.metawear.module.MagnetometerBmm150;
  * Created by etsai on 1/12/2016.
  */
 public class MagnetometerFragment extends ThreeAxisChartFragment {
-    private static final float B_FIELD_RANGE= 250.f, MAG_ODR= 10.f;
+    private static final float B_FIELD_RANGE= 2500f, MAG_ODR= 25.f;
 
     private MagnetometerBmm150 magnetometer = null;
 
@@ -60,10 +61,17 @@ public class MagnetometerFragment extends ThreeAxisChartFragment {
 
     @Override
     protected void setup() {
-        magnetometer.usePreset(MagnetometerBmm150.Preset.REGULAR);
-        magnetometer.magneticField().addRouteAsync(source -> source.stream((data, env) -> {
+        magnetometer.configure()
+                .outputDataRate(MagnetometerBmm150.OutputDataRate.ODR_25_HZ)
+                .commit();
+
+        final float period = 1 / MAG_ODR;
+        final AsyncDataProducer producer = magnetometer.packedMagneticField() == null ?
+                magnetometer.packedMagneticField() :
+                magnetometer.magneticField();
+        producer.addRouteAsync(source -> source.stream((data, env) -> {
             final MagneticField value = data.value(MagneticField.class);
-            addChartData(value.x(), value.y(), value.z(), MAG_ODR);
+            addChartData(value.x() * 1000000f, value.y() * 1000000f, value.z() * 1000000f, period);
         })).continueWith(task -> {
             streamRoute = task.getResult();
 
@@ -77,6 +85,9 @@ public class MagnetometerFragment extends ThreeAxisChartFragment {
     @Override
     protected void clean() {
         magnetometer.stop();
-        magnetometer.magneticField().stop();
+        (magnetometer.packedMagneticField() == null ?
+                magnetometer.packedMagneticField() :
+                magnetometer.magneticField()
+        ).stop();
     }
 }

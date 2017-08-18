@@ -66,6 +66,7 @@ import com.mbientlab.metawear.MetaWearBoard;
 import com.mbientlab.metawear.android.BtleService;
 import com.mbientlab.metawear.app.ModuleFragmentBase.FragmentBus;
 import com.mbientlab.metawear.module.Debug;
+import com.mbientlab.metawear.module.Settings;
 
 import java.io.File;
 import java.util.Collections;
@@ -82,6 +83,8 @@ import no.nordicsemi.android.dfu.DfuProgressListenerAdapter;
 import no.nordicsemi.android.dfu.DfuServiceInitiator;
 import no.nordicsemi.android.dfu.DfuServiceListenerHelper;
 import no.nordicsemi.android.dfu.DfuSettingsConstants;
+
+import static com.mbientlab.metawear.app.ScannerActivity.setConnInterval;
 
 public class NavigationActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener, ServiceConnection, FragmentBus, LoaderManager.LoaderCallbacks<Cursor> {
     public final static String EXTRA_BT_DEVICE= "com.mbientlab.metawear.app.NavigationActivity.EXTRA_BT_DEVICE";
@@ -245,6 +248,7 @@ public class NavigationActivity extends AppCompatActivity implements NavigationV
         if (task.isCancelled()) {
             finish();
         } else {
+            setConnInterval(mwBoard.getModule(Settings.class));
             ((ModuleFragmentBase) currentFragment).reconnected();
         }
 
@@ -469,6 +473,9 @@ public class NavigationActivity extends AppCompatActivity implements NavigationV
                 Snackbar.make(findViewById(R.id.drawer_layout), R.string.message_soft_reset, Snackbar.LENGTH_LONG).show();
                 return true;
             case R.id.action_disconnect:
+                mwBoard.getModule(Settings.class).editBleConnParams()
+                        .maxConnectionInterval(125f)
+                        .commit();
                 mwBoard.disconnectAsync();
                 finish();
                 return true;

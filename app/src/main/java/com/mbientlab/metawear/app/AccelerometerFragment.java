@@ -39,6 +39,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 
 import com.github.mikephil.charting.components.YAxis;
+import com.mbientlab.metawear.AsyncDataProducer;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
@@ -122,12 +123,15 @@ public class AccelerometerFragment extends ThreeAxisChartFragment {
 
         samplePeriod= 1 / accelerometer.getOdr();
 
-        accelerometer.acceleration().addRouteAsync(source -> source.stream((data, env) -> {
+        final AsyncDataProducer producer = accelerometer.packedAcceleration() == null ?
+                accelerometer.packedAcceleration() :
+                accelerometer.acceleration();
+        producer.addRouteAsync(source -> source.stream((data, env) -> {
             final Acceleration value = data.value(Acceleration.class);
             addChartData(value.x(), value.y(), value.z(), samplePeriod);
         })).continueWith(task -> {
             streamRoute = task.getResult();
-            accelerometer.acceleration().start();
+            producer.start();
             accelerometer.start();
 
             return null;
@@ -137,7 +141,11 @@ public class AccelerometerFragment extends ThreeAxisChartFragment {
     @Override
     protected void clean() {
         accelerometer.stop();
-        accelerometer.acceleration().stop();
+
+        (accelerometer.packedAcceleration() == null ?
+                accelerometer.packedAcceleration() :
+                accelerometer.acceleration()
+        ).stop();
     }
 
     private void fillRangeAdapter() {

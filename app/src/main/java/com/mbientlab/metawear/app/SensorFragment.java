@@ -41,7 +41,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.Button;
-import android.widget.CompoundButton;
 import android.widget.Switch;
 
 import com.github.mikephil.charting.charts.LineChart;
@@ -71,6 +70,7 @@ public abstract class SensorFragment extends ModuleFragmentBase {
     private final Runnable updateChartTask= new Runnable() {
         @Override
         public void run() {
+            chart.getData().notifyDataChanged();
             chart.notifyDataSetChanged();
             moveViewToLast();
             chartHandler.postDelayed(updateChartTask, UPDATE_PERIOD);
@@ -88,11 +88,7 @@ public abstract class SensorFragment extends ModuleFragmentBase {
     private void moveViewToLast() {
         chart.setVisibleXRangeMinimum(120);
         chart.setVisibleXRangeMaximum(120);
-        if (sampleCount > 120) {
-            chart.moveViewToX(sampleCount - 120 - 1);
-        } else {
-            chart.moveViewToX(0);
-        }
+        chart.moveViewToX(Math.max(0f, chartXValues.size()));
     }
 
     @Override
@@ -133,51 +129,40 @@ public abstract class SensorFragment extends ModuleFragmentBase {
         chart.setDescription(null);
 
         Button clearButton= (Button) view.findViewById(R.id.layout_two_button_left);
-        clearButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                refreshChart(true);
-            }
-        });
+        clearButton.setOnClickListener(view1 -> refreshChart(true));
         clearButton.setText(R.string.label_clear);
 
-        ((Switch) view.findViewById(R.id.sample_control)).setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
-                if (b) {
-                    moveViewToLast();
-                    setup();
-                    chartHandler.postDelayed(updateChartTask, UPDATE_PERIOD);
-                } else {
-                    chart.setVisibleXRangeMinimum(1);
-                    chart.setVisibleXRangeMaximum(sampleCount);
-                    clean();
-                    if (streamRoute != null) {
-                        streamRoute.remove();
-                        streamRoute = null;
-                    }
-                    chartHandler.removeCallbacks(updateChartTask);
+        ((Switch) view.findViewById(R.id.sample_control)).setOnCheckedChangeListener((compoundButton, b) -> {
+            if (b) {
+                moveViewToLast();
+                setup();
+                chartHandler.postDelayed(updateChartTask, UPDATE_PERIOD);
+            } else {
+                chart.setVisibleXRangeMinimum(1);
+                chart.setVisibleXRangeMaximum(sampleCount);
+                clean();
+                if (streamRoute != null) {
+                    streamRoute.remove();
+                    streamRoute = null;
                 }
+                chartHandler.removeCallbacks(updateChartTask);
             }
         });
 
         Button saveButton= (Button) view.findViewById(R.id.layout_two_button_right);
         saveButton.setText(R.string.label_save);
-        saveButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                String filename = saveData();
+        saveButton.setOnClickListener(view12 -> {
+            String filename = saveData();
 
-                if (filename != null) {
-                    File dataFile = getActivity().getFileStreamPath(filename);
-                    Uri contentUri = FileProvider.getUriForFile(getActivity(), "com.mbientlab.metawear.app.fileprovider", dataFile);
+            if (filename != null) {
+                File dataFile = getActivity().getFileStreamPath(filename);
+                Uri contentUri = FileProvider.getUriForFile(getActivity(), "com.mbientlab.metawear.app.fileprovider", dataFile);
 
-                    Intent intent = new Intent(Intent.ACTION_SEND);
-                    intent.setType("text/plain");
-                    intent.putExtra(Intent.EXTRA_SUBJECT, filename);
-                    intent.putExtra(Intent.EXTRA_STREAM, contentUri);
-                    startActivity(Intent.createChooser(intent, "Saving Data"));
-                }
+                Intent intent = new Intent(Intent.ACTION_SEND);
+                intent.setType("text/plain");
+                intent.putExtra(Intent.EXTRA_SUBJECT, filename);
+                intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                startActivity(Intent.createChooser(intent, "Saving Data"));
             }
         });
     }

@@ -6,6 +6,7 @@ import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.os.Build;
 import android.os.IBinder;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -14,6 +15,7 @@ import com.mbientlab.bletoolbox.scanner.BleScannerFragment;
 import com.mbientlab.bletoolbox.scanner.BleScannerFragment.*;
 import com.mbientlab.metawear.MetaWearBoard;
 import com.mbientlab.metawear.android.BtleService;
+import com.mbientlab.metawear.module.Settings;
 
 import java.util.UUID;
 
@@ -30,6 +32,13 @@ public class ScannerActivity extends AppCompatActivity implements ScannerCommuni
         };
     }
 
+    static void setConnInterval(Settings settings) {
+        Settings.BleConnectionParametersEditor editor = settings.editBleConnParams();
+        if (editor != null) {
+            editor.maxConnectionInterval(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? 11.25f : 7.5f)
+                    .commit();
+        }
+    }
     public static Task<Void> reconnect(final MetaWearBoard board) {
         return board.connectAsync()
                 .continueWithTask(task -> {
@@ -83,9 +92,7 @@ public class ScannerActivity extends AppCompatActivity implements ScannerCommuni
         connectDialog.setCancelable(false);
         connectDialog.setCanceledOnTouchOutside(false);
         connectDialog.setIndeterminate(true);
-        connectDialog.setButton(DialogInterface.BUTTON_NEGATIVE, getString(R.string.label_cancel), (dialogInterface, i) -> {
-            mwBoard.disconnectAsync();
-        });
+        connectDialog.setButton(DialogInterface.BUTTON_NEGATIVE, getString(R.string.label_cancel), (dialogInterface, i) -> mwBoard.disconnectAsync());
         connectDialog.show();
 
         mwBoard.connectAsync()
@@ -97,6 +104,7 @@ public class ScannerActivity extends AppCompatActivity implements ScannerCommuni
                 })
                 .continueWith(task -> {
                     if (!task.isCancelled()) {
+                        setConnInterval(mwBoard.getModule(Settings.class));
                         runOnUiThread(connectDialog::dismiss);
                         Intent navActivityIntent = new Intent(ScannerActivity.this, NavigationActivity.class);
                         navActivityIntent.putExtra(NavigationActivity.EXTRA_BT_DEVICE, btDevice);

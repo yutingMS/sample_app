@@ -40,6 +40,7 @@ import android.widget.TextView;
 
 import com.github.mikephil.charting.components.YAxis;
 
+import com.mbientlab.metawear.AsyncDataProducer;
 import com.mbientlab.metawear.UnsupportedModuleException;
 import com.mbientlab.metawear.app.help.HelpOption;
 import com.mbientlab.metawear.app.help.HelpOptionAdapter;
@@ -104,13 +105,19 @@ public class GyroFragment extends ThreeAxisChartFragment {
 
     @Override
     protected void setup() {
+        Range[] values = Range.values();
         gyro.configure()
                 .odr(OutputDataRate.ODR_25_HZ)
-                .range(Range.values()[rangeIndex])
+                .range(values[values.length - rangeIndex - 1])
                 .commit();
-        gyro.angularVelocity().addRouteAsync(source -> source.stream((data, env) -> {
+
+        final float period = 1 / GYR_ODR;
+        final AsyncDataProducer producer = gyro.packedAngularVelocity() == null ?
+                gyro.packedAngularVelocity() :
+                gyro.angularVelocity();
+        producer.addRouteAsync(source -> source.stream((data, env) -> {
             final AngularVelocity value = data.value(AngularVelocity.class);
-            addChartData(value.x(), value.y(), value.z(), GYR_ODR);
+            addChartData(value.x(), value.y(), value.z(), period);
         })).continueWith(task -> {
             streamRoute = task.getResult();
 
@@ -124,5 +131,10 @@ public class GyroFragment extends ThreeAxisChartFragment {
     @Override
     protected void clean() {
         gyro.stop();
+
+        (gyro.packedAngularVelocity() == null ?
+                gyro.packedAngularVelocity() :
+                gyro.angularVelocity()
+        ).stop();
     }
 }
