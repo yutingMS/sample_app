@@ -90,6 +90,8 @@ public class GpioFragment extends SingleDataSensorFragment {
         chartData.addEntry(new Entry(gpioValue, sampleCount), 0);
 
         sampleCount++;
+
+        updateChart();
     };
 
     public GpioFragment() {

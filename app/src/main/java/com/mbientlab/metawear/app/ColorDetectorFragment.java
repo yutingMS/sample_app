@@ -140,6 +140,8 @@ public class ColorDetectorFragment extends SensorFragment {
             chartData.addEntry(new Entry(adc.green, sampleCount), 2);
             chartData.addEntry(new Entry(adc.blue, sampleCount), 3);
             sampleCount++;
+
+            updateChart();
         })).continueWithTask(task -> {
             streamRoute = task.getResult();
 

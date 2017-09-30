@@ -244,6 +244,8 @@ public class TemperatureFragment extends SingleDataSensorFragment {
             chartData.addEntry(new Entry(celsius, sampleCount), 0);
 
             sampleCount++;
+
+            updateChart();
         })).continueWithTask(task -> {
             streamRoute = task.getResult();
 

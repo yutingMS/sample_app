@@ -82,7 +82,6 @@ import no.nordicsemi.android.dfu.DfuProgressListener;
 import no.nordicsemi.android.dfu.DfuProgressListenerAdapter;
 import no.nordicsemi.android.dfu.DfuServiceInitiator;
 import no.nordicsemi.android.dfu.DfuServiceListenerHelper;
-import no.nordicsemi.android.dfu.DfuSettingsConstants;
 
 import static com.mbientlab.metawear.app.ScannerActivity.setConnInterval;
 
@@ -465,18 +464,29 @@ public class NavigationActivity extends AppCompatActivity implements NavigationV
 
         switch(id) {
             case R.id.action_reset:
-                mwBoard.getModule(Debug.class).resetAsync()
-                        .continueWith(ignored -> {
-                            attemptReconnect(0);
-                            return null;
-                        });
-                Snackbar.make(findViewById(R.id.drawer_layout), R.string.message_soft_reset, Snackbar.LENGTH_LONG).show();
+                if (!mwBoard.inMetaBootMode()) {
+                    mwBoard.getModule(Debug.class).resetAsync()
+                            .continueWith(ignored -> {
+                                attemptReconnect(0);
+                                return null;
+                            });
+                    Snackbar.make(findViewById(R.id.drawer_layout), R.string.message_soft_reset, Snackbar.LENGTH_LONG).show();
+                } else {
+                    Snackbar.make(findViewById(R.id.drawer_layout), R.string.message_no_soft_reset, Snackbar.LENGTH_LONG).show();
+                }
                 return true;
             case R.id.action_disconnect:
-                mwBoard.getModule(Settings.class).editBleConnParams()
-                        .maxConnectionInterval(125f)
-                        .commit();
-                mwBoard.disconnectAsync();
+                if (!mwBoard.inMetaBootMode()) {
+                    Settings.BleConnectionParametersEditor editor = mwBoard.getModule(Settings.class).editBleConnParams();
+                    if (editor != null) {
+                        editor.maxConnectionInterval(125f)
+                                .commit();
+                    }
+                    mwBoard.getModule(Debug.class).disconnectAsync();
+                } else {
+                    mwBoard.disconnectAsync();
+                }
+
                 finish();
                 return true;
             case R.id.action_manual_dfu:

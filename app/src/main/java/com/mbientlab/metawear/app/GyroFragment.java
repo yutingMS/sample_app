@@ -118,6 +118,7 @@ public class GyroFragment extends ThreeAxisChartFragment {
         producer.addRouteAsync(source -> source.stream((data, env) -> {
             final AngularVelocity value = data.value(AngularVelocity.class);
             addChartData(value.x(), value.y(), value.z(), period);
+            updateChart();
         })).continueWith(task -> {
             streamRoute = task.getResult();
 

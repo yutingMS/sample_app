@@ -51,6 +51,7 @@
   <string name="title_reconnect_attempt">Reconnecting</string>
 
   <string name="message_soft_reset">Soft reset issued</string>
+  <string name="message_no_soft_reset">Cannot issue soft reset to MetaBoot board</string>
   <string name="message_wait">Please wait</string>
   <string name="message_dfu_accept">A firmware update is available.  Do you wish to download the newest firmware version?</string>
   <string name="message_dfu">Updating the firmware to the latest version, please wait</string>

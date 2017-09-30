@@ -33,10 +33,12 @@ public class ScannerActivity extends AppCompatActivity implements ScannerCommuni
     }
 
     static void setConnInterval(Settings settings) {
-        Settings.BleConnectionParametersEditor editor = settings.editBleConnParams();
-        if (editor != null) {
-            editor.maxConnectionInterval(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? 11.25f : 7.5f)
-                    .commit();
+        if (settings != null) {
+            Settings.BleConnectionParametersEditor editor = settings.editBleConnParams();
+            if (editor != null) {
+                editor.maxConnectionInterval(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? 11.25f : 7.5f)
+                        .commit();
+            }
         }
     }
     public static Task<Void> reconnect(final MetaWearBoard board) {

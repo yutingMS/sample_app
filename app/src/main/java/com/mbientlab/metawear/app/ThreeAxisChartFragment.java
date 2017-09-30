@@ -59,6 +59,8 @@ public abstract class ThreeAxisChartFragment extends SensorFragment {
         chartData.addEntry(new Entry(x2, sampleCount), 2);
 
         sampleCount++;
+
+        updateChart();
     }
 
     protected ThreeAxisChartFragment(String dataType, int layoutId, int sensorResId, float min, float max, float sampleFreq) {

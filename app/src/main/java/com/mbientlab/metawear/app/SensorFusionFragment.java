@@ -127,6 +127,8 @@ public class SensorFusionFragment extends SensorFragment {
                 chartData.addEntry(new Entry(quaternion.z(), sampleCount), 3);
 
                 sampleCount++;
+
+                updateChart();
             })).continueWith(task -> {
                 streamRoute = task.getResult();
                 sensorFusion.quaternion().start();
@@ -146,6 +148,8 @@ public class SensorFusionFragment extends SensorFragment {
                 chartData.addEntry(new Entry(angles.yaw(), sampleCount), 3);
 
                 sampleCount++;
+
+                updateChart();
             })).continueWith(task -> {
                 streamRoute = task.getResult();
                 sensorFusion.eulerAngles().start();

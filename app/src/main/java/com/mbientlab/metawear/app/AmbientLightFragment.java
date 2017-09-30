@@ -150,6 +150,7 @@ public class AmbientLightFragment extends SingleDataSensorFragment {
                 chartData.addEntry(new Entry(lux, sampleCount), 0);
 
                 sampleCount++;
+                updateChart();
             });
         }).continueWith(task -> {
             streamRoute = task.getResult();

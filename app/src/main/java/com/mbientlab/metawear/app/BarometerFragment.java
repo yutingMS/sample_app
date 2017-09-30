@@ -91,6 +91,8 @@ public class BarometerFragment extends SensorFragment {
             if (pressureData.size() >= sampleCount) {
                 chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * LIGHT_SAMPLE_PERIOD));
                 sampleCount++;
+
+                updateChart();
             }
             chartData.addEntry(new Entry(data.value(Float.class), sampleCount), 0);
         })).continueWithTask(task -> {
@@ -101,6 +103,8 @@ public class BarometerFragment extends SensorFragment {
                 if (altitudeData.size() >= sampleCount) {
                     chartData.addXValue(String.format(Locale.US, "%.2f", sampleCount * LIGHT_SAMPLE_PERIOD));
                     sampleCount++;
+
+                    updateChart();
                 }
                 chartData.addEntry(new Entry(data.value(Float.class), sampleCount), 1);
             }));

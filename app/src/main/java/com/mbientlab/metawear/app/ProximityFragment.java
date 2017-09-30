@@ -75,6 +75,8 @@ public class ProximityFragment extends SingleDataSensorFragment {
             chartData.addEntry(new Entry(data.value(Integer.class), sampleCount), 0);
 
             sampleCount++;
+
+            updateChart();
         })).continueWithTask(task -> {
             streamRoute = task.getResult();
             return timer.scheduleAsync(PROXIMITY_SAMPLE_PERIOD, false, proximityAdc::read);

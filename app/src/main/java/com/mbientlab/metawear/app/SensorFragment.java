@@ -49,17 +49,16 @@ import com.mbientlab.metawear.Route;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Calendar;
 
 /**
  * Created by etsai on 8/19/2015.
  */
 public abstract class SensorFragment extends ModuleFragmentBase {
-    private static final float FPS= 30.f;
-    private static final long UPDATE_PERIOD= (long) ((1 / FPS) * 1000L);
-
     protected final ArrayList<String> chartXValues= new ArrayList<>();
     protected LineChart chart;
     protected int sampleCount;
+    protected long prevUpdate = -1;
 
     protected float min, max;
     protected Route streamRoute = null;
@@ -67,15 +66,6 @@ public abstract class SensorFragment extends ModuleFragmentBase {
     private byte globalLayoutListenerCounter= 0;
     private final int layoutId;
 
-    private final Runnable updateChartTask= new Runnable() {
-        @Override
-        public void run() {
-            chart.getData().notifyDataChanged();
-            chart.notifyDataSetChanged();
-            moveViewToLast();
-            chartHandler.postDelayed(updateChartTask, UPDATE_PERIOD);
-        }
-    };
     private final Handler chartHandler= new Handler();
 
     protected SensorFragment(int sensorResId, int layoutId, float min, float max) {
@@ -85,10 +75,23 @@ public abstract class SensorFragment extends ModuleFragmentBase {
         this.max= max;
     }
 
+    protected void updateChart() {
+        long current = Calendar.getInstance().getTimeInMillis();
+        if (prevUpdate == -1 || (current - prevUpdate) >= 33) {
+            chartHandler.post(() -> {
+                chart.getData().notifyDataChanged();
+                chart.notifyDataSetChanged();
+
+                moveViewToLast();
+            });
+
+            prevUpdate = current;
+        }
+    }
     private void moveViewToLast() {
         chart.setVisibleXRangeMinimum(120);
         chart.setVisibleXRangeMaximum(120);
-        chart.moveViewToX(Math.max(0f, chartXValues.size()));
+        chart.moveViewToX(Math.max(0f, chartXValues.size() - 1));
     }
 
     @Override
@@ -136,7 +139,6 @@ public abstract class SensorFragment extends ModuleFragmentBase {
             if (b) {
                 moveViewToLast();
                 setup();
-                chartHandler.postDelayed(updateChartTask, UPDATE_PERIOD);
             } else {
                 chart.setVisibleXRangeMinimum(1);
                 chart.setVisibleXRangeMaximum(sampleCount);
@@ -145,7 +147,6 @@ public abstract class SensorFragment extends ModuleFragmentBase {
                     streamRoute.remove();
                     streamRoute = null;
                 }
-                chartHandler.removeCallbacks(updateChartTask);
             }
         });
 
